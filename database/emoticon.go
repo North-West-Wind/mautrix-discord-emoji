@@ -25,6 +25,12 @@ func (eq *EmoticonQuery) New() *Emoticon {
 	}
 }
 
+func (rq *EmoticonQuery) GetByMXIDAndMXC(mxid id.UserID, mxc string) *Emoticon {
+	query := emoticonSelect + " WHERE mxid = $1 AND mxc=$2"
+
+	return rq.get(query, mxid, mxc)
+}
+
 func (rq *EmoticonQuery) GetByMXC(mxc string) *Emoticon {
 	query := emoticonSelect + " WHERE mxc=$1"
 

@@ -26,6 +26,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/util"
+	"go.mau.fi/mautrix-discord/database"
 	"go.mau.fi/mautrix-discord/ext_format"
 	"go.mau.fi/util/variationselector"
 	"golang.org/x/exp/slices"
@@ -227,12 +228,16 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 	},
 	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
 		portal := ctx.ReturnData[formatterContextPortalKey].(*Portal)
+		var emoticon *database.Emoticon
 		if src != "" {
-			emoticon := portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(src, "mxc://"))
+			emoticon = portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(src, "mxc://"))
+		} else if alt != "" {
+			emoticon = portal.bridge.DB.Emoticon.GetByAlt(strings.Trim(alt, ":"))
+		}
+		if emoticon != nil {
 			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
 		} else if alt != "" {
-			emoticon := portal.bridge.DB.Emoticon.GetByAlt(strings.Trim(alt, ":"))
-			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
+			return fmt.Sprintf(":%s:", alt)
 		}
 		return ""
 	},

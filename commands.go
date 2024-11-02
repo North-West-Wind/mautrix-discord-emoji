@@ -901,10 +901,13 @@ func fnDeleteAllPortals(ce *WrappedCommandEvent) {
 	}()
 }
 
-var matrixEmojiParser = &ext_format.ExtendedHTMLParser{
+var matrixEmoticonParser = &ext_format.ExtendedHTMLParser{
 	TabsToSpaces:   4,
 	Newline:        "\n",
 	HorizontalLine: "\n---\n",
+	TextConverter: func(s string, ctx ext_format.Context) string {
+		return ""
+	},
 	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
 		return fmt.Sprintf("%s:%s", strings.Trim(alt, ":"), strings.TrimPrefix(src, "mxc://"))
 	},
@@ -939,7 +942,7 @@ func fnMapEmoji(ce *WrappedCommandEvent) {
 	matrixEmojiHTML := ""
 	discordEmojiId := ""
 	discordEmojiName := ""
-	for _, arg := range ce.Args {
+	for _, arg := range ce.Args[1:] {
 		if arg == "--name" {
 			nextIsName = true
 		} else if nextIsName {
@@ -953,13 +956,39 @@ func fnMapEmoji(ce *WrappedCommandEvent) {
 		}
 	}
 
-	if fail || matrixEmojiHTML == "" || (set && discordEmojiId == "") {
+	if ce.Portal == nil {
+		ce.Reply("This command only works in non-management room")
+		return
+	}
+
+	ev, err := ce.Portal.getEvent(ce.EventID)
+	if err != nil {
+		ce.Reply("Failed to get message event")
+		return
+	}
+	if ev.Type.Class != event.MessageEventType {
+		ce.Reply("Somehow the event is not message!?")
+		return
+	}
+	content := ev.Content.AsMessage()
+	if content.Format != event.FormatHTML || len(content.FormattedBody) == 0 {
+		ce.Reply("Command doesn't include a valid emoji")
+		return
+	}
+
+	ctx := ext_format.NewContext()
+	ctx.ReturnData[formatterContextPortalKey] = ce.Portal
+	matrixEmoji := matrixEmoticonParser.Parse(content.FormattedBody, ctx)
+	// extremely jank img tag extractor
+	endAngleSplit := strings.Split("<"+strings.Join(strings.Split(content.FormattedBody, "<")[1:], "<"), ">")
+	matrixEmojiHTML = strings.Join(endAngleSplit[:len(endAngleSplit)-1], ">") + ">"
+
+	if fail || matrixEmoji == "" || (set && discordEmojiId == "") {
 		ce.Reply("**Usage** (set): `$cmdprefix map-emoji set <Matrix emoji> <Discord emoji ID> [--name <Discord emoji name>]`\n" +
 			"**Usage** (unset): `$cmdprefix map-emoji unset <Matrix emoji>`")
 		return
 	}
 
-	matrixEmoji := matrixEmojiParser.Parse(matrixEmojiHTML, ext_format.NewContext())
 	matrixEmojiSplit := strings.Split(matrixEmoji, ":")
 	matrixEmojiAlt := matrixEmojiSplit[0]
 	matrixEmojiMXC := strings.Join(matrixEmojiSplit[1:], ":")
@@ -974,13 +1003,13 @@ func fnMapEmoji(ce *WrappedCommandEvent) {
 	}
 
 	if !set {
-		emoticon := ce.Portal.bridge.DB.Emoticon.GetByMXC(matrixEmojiMXC)
+		emoticon := ce.Portal.bridge.DB.Emoticon.GetByMXIDAndMXC(ce.User.MXID, matrixEmojiMXC)
 		if emoticon == nil {
-			ce.Reply("No mapping of %s found.", matrixEmojiHTML)
+			ce.ReplyAdvanced(fmt.Sprintf("No mapping of %s found", matrixEmojiHTML), true, true)
 			return
 		}
 		emoticon.Delete()
-		ce.Reply("Deleted mapping of %s.", matrixEmojiHTML)
+		ce.ReplyAdvanced(fmt.Sprintf("Deleted mapping of %s", matrixEmojiHTML), true, true)
 		return
 	}
 
@@ -995,7 +1024,7 @@ func fnMapEmoji(ce *WrappedCommandEvent) {
 	emoticon.DCID = discordEmojiId
 	emoticon.DCName = discordEmojiName
 	emoticon.Insert()
-	ce.Reply("Mapped %s to <:%s:%s>.", matrixEmojiHTML, discordEmojiName, discordEmojiId)
+	ce.ReplyAdvanced(fmt.Sprintf("Mapped %s to `<:%s:%s>`", matrixEmojiHTML, discordEmojiName, discordEmojiId), true, true)
 }
 
 var cmdMapEmoji = &commands.FullHandler{
