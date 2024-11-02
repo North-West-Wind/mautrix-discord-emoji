@@ -26,6 +26,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/util"
+	"go.mau.fi/mautrix-discord/ext_format"
 	"go.mau.fi/util/variationselector"
 	"golang.org/x/exp/slices"
 	"maunium.net/go/mautrix/event"
@@ -104,7 +105,7 @@ func appendIfNotContains(arr []string, newItem string) []string {
 	return append(arr, newItem)
 }
 
-func (br *DiscordBridge) pillConverter(displayname, mxid, eventID string, ctx format.Context) string {
+func (br *DiscordBridge) pillConverter(displayname, mxid, eventID string, ctx ext_format.Context) string {
 	if len(mxid) == 0 {
 		return displayname
 	}
@@ -193,36 +194,47 @@ func escapeDiscordMarkdown(s string) string {
 	return builder.String()
 }
 
-var matrixHTMLParser = &format.HTMLParser{
+var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 	TabsToSpaces:   4,
 	Newline:        "\n",
 	HorizontalLine: "\n---\n",
-	ItalicConverter: func(s string, ctx format.Context) string {
+	ItalicConverter: func(s string, ctx ext_format.Context) string {
 		return fmt.Sprintf("*%s*", s)
 	},
-	UnderlineConverter: func(s string, ctx format.Context) string {
+	UnderlineConverter: func(s string, ctx ext_format.Context) string {
 		return fmt.Sprintf("__%s__", s)
 	},
-	TextConverter: func(s string, ctx format.Context) string {
+	TextConverter: func(s string, ctx ext_format.Context) string {
 		if ctx.TagStack.Has("pre") || ctx.TagStack.Has("code") {
 			// If we're in a code block, don't escape markdown
 			return s
 		}
 		return escapeDiscordMarkdown(s)
 	},
-	SpoilerConverter: func(text, reason string, ctx format.Context) string {
+	SpoilerConverter: func(text, reason string, ctx ext_format.Context) string {
 		if reason != "" {
 			return fmt.Sprintf("(%s) ||%s||", reason, text)
 		}
 		return fmt.Sprintf("||%s||", text)
 	},
-	LinkConverter: func(text, href string, ctx format.Context) string {
+	LinkConverter: func(text, href string, ctx ext_format.Context) string {
 		if text == href {
 			return text
 		} else if !discordLinkRegexFull.MatchString(href) {
 			return fmt.Sprintf("%s (%s)", escapeDiscordMarkdown(text), escapeDiscordMarkdown(href))
 		}
 		return fmt.Sprintf("[%s](%s)", escapeDiscordMarkdown(text), href)
+	},
+	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
+		portal := ctx.ReturnData[formatterContextPortalKey].(*Portal)
+		if src != "" {
+			emoticon := portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(src, "mxc://"))
+			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
+		} else if alt != "" {
+			emoticon := portal.bridge.DB.Emoticon.GetByAlt(strings.Trim(alt, ":"))
+			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
+		}
+		return ""
 	},
 }
 
@@ -233,7 +245,7 @@ func (portal *Portal) parseMatrixHTML(content *event.MessageEventContent) (strin
 		RepliedUser: true,
 	}
 	if content.Format == event.FormatHTML && len(content.FormattedBody) > 0 {
-		ctx := format.NewContext()
+		ctx := ext_format.NewContext()
 		ctx.ReturnData[formatterContextPortalKey] = portal
 		ctx.ReturnData[formatterContextAllowedMentionsKey] = allowedMentions
 		if content.Mentions != nil {

@@ -177,3 +177,13 @@ CREATE TABLE discord_file (
 );
 
 CREATE INDEX discord_file_mxc_idx ON discord_file (mxc);
+
+CREATE TABLE emoticon (
+    mxid    TEXT NOT NULL,
+    mxc     TEXT NOT NULL,
+	mxalt   TEXT NOT NULL,
+    dcid    TEXT NOT NULL,
+    dcname  TEXT NOT NULL,
+
+    PRIMARY KEY (mxid, mxc)
+);
