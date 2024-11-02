@@ -1898,8 +1898,13 @@ func (portal *Portal) handleMatrixReaction(sender *User, evt *event.Event) {
 		} else if emojiFile := portal.bridge.DB.File.GetEmojiByMXC(uri); emojiFile != nil && emojiFile.ID != "" && emojiFile.EmojiName != "" {
 			emojiID = fmt.Sprintf("%s:%s", emojiFile.EmojiName, emojiFile.ID)
 		} else {
-			go portal.sendMessageMetrics(evt, fmt.Errorf("%w %s", errUnknownEmoji, emojiID), "Ignoring")
-			return
+			emoticon := portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(emojiID, "mxc://"))
+			if emoticon != nil {
+				emojiID = fmt.Sprintf("%s:%s", emoticon.DCName, emoticon.DCID)
+			} else {
+				go portal.sendMessageMetrics(evt, fmt.Errorf("%w %s", errUnknownEmoji, emojiID), "Ignoring")
+				return
+			}
 		}
 	} else {
 		emojiID = variationselector.FullyQualify(emojiID)
