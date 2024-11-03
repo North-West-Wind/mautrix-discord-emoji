@@ -74,6 +74,7 @@ type GuildEmoji struct {
 	GuildID   string
 	EmojiName string
 	MXC       string
+	OtherMXCs map[string]bool // is map faster? i sure hope so
 }
 
 func (e *GuildEmoji) Scan(row dbutil.Scannable) *GuildEmoji {

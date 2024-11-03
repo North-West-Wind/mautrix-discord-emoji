@@ -41,10 +41,9 @@ type Guild struct {
 	bridge *DiscordBridge
 	log    log.Logger
 
-	roomCreateLock      sync.Mutex
-	emojis              map[string]*database.GuildEmoji
-	discordEmojis       []*discordgo.Emoji
-	allowExternalEmojis bool
+	roomCreateLock sync.Mutex
+	emojis         map[string]*database.GuildEmoji
+	discordEmojis  []*discordgo.Emoji
 }
 
 func (br *DiscordBridge) loadGuild(dbGuild *database.Guild, id string, createIfNotExist bool) *Guild {
@@ -248,7 +247,6 @@ func (guild *Guild) UpdateInfo(source *User, meta *discordgo.Guild) *discordgo.G
 	}
 	// handle emoji fetching
 	guild.UpdateEmojis(meta)
-	guild.allowExternalEmojis = meta.Permissions&discordgo.PermissionUseExternalEmojis != 0
 	source.ensureInvited(nil, guild.MXID, false, false)
 	return meta
 }
@@ -325,6 +323,7 @@ type ImagePackEventContent struct {
 }
 
 func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
+	guild.log.Debugfln("Updating emojis for %s", guild.ID)
 	guild.discordEmojis = meta.Emojis
 	emojis := map[string]*database.GuildEmoji{}
 	for _, emoji := range meta.Emojis {
@@ -357,11 +356,12 @@ func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
 	}
 	// self-handling changes because it doesn't have anything to do with the guild
 	if changed {
+		guild.log.Debugfln("Emoji set is different for %s", guild.ID)
 		for name, emoji := range guild.emojis {
 			// remove those that doesn't exist anymore
 			if emojis[name] == nil {
 				emoji.Delete()
-				guild.emojis[name] = nil
+				delete(guild.emojis, name)
 			}
 		}
 		for name, emoji := range emojis {

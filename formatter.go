@@ -240,11 +240,12 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 			split := strings.Split(name, ":")
 			emojiName := strings.Join(split[:len(split)-1], ":")
 			if alt == emojiName || src == emoji.MXC {
+				portal.log.Debug().Msg("Found emoji in layer 1")
 				guildEmoji = emoji
 				break
 			}
 		}
-		if guildEmoji == nil && portal.Guild.allowExternalEmojis {
+		if guildEmoji == nil {
 			// Find in other guilds
 			for id, guild := range portal.bridge.guildsByID {
 				if id == portal.GuildID {
@@ -255,6 +256,7 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 					split := strings.Split(name, ":")
 					emojiName := strings.Join(split[:len(split)-1], ":")
 					if alt == emojiName || src == emoji.MXC {
+						portal.log.Debug().Msg("Found emoji in layer 2")
 						guildEmoji = emoji
 						break
 					}
@@ -271,17 +273,18 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 			}
 		}
 		if guildEmoji != nil {
+			if src != guildEmoji.MXC {
+				guildEmoji.OtherMXCs[src] = true
+			}
 			return fmt.Sprintf("<:%s>", guildEmoji.EmojiName)
 		} else if alt != "" {
 			// Fallback to guild fetching
 			// Prioritize current guild
 			for _, emoji := range portal.Guild.discordEmojis {
 				if emoji.Name == alt {
+					portal.log.Debug().Msg("Found emoji in layer 3")
 					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
 				}
-			}
-			if !portal.Guild.allowExternalEmojis {
-				return fmt.Sprintf(":%s:", alt)
 			}
 			// Find in other guilds
 			for id, guild := range portal.bridge.guildsByID {
@@ -291,6 +294,7 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 				}
 				for _, emoji := range guild.discordEmojis {
 					if emoji.Name == alt {
+						portal.log.Debug().Msg("Found emoji in layer 4")
 						return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
 					}
 				}

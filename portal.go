@@ -1898,9 +1898,17 @@ func (portal *Portal) handleMatrixReaction(sender *User, evt *event.Event) {
 		} else if emojiFile := portal.bridge.DB.File.GetEmojiByMXC(uri); emojiFile != nil && emojiFile.ID != "" && emojiFile.EmojiName != "" {
 			emojiID = fmt.Sprintf("%s:%s", emojiFile.EmojiName, emojiFile.ID)
 		} else {
-			emoticon := portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(emojiID, "mxc://"))
+			// this only handles bridge-created im.ponies.room_emotes image packs
+			trimmed := strings.TrimPrefix(emojiID, "mxc://")
+			var emoticon *database.GuildEmoji
+			for _, emoji := range portal.Guild.emojis {
+				if trimmed == emoji.MXC || emoji.OtherMXCs[trimmed] {
+					emoticon = emoji
+					break
+				}
+			}
 			if emoticon != nil {
-				emojiID = fmt.Sprintf("%s:%s", emoticon.DCName, emoticon.DCID)
+				emojiID = emoticon.EmojiName
 			} else {
 				go portal.sendMessageMetrics(evt, fmt.Errorf("%w %s", errUnknownEmoji, emojiID), "Ignoring")
 				return

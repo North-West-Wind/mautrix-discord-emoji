@@ -38,7 +38,6 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/mautrix-discord/database"
-	"go.mau.fi/mautrix-discord/ext_format"
 	"go.mau.fi/mautrix-discord/remoteauth"
 )
 
@@ -71,7 +70,6 @@ func (br *DiscordBridge) RegisterCommands() {
 		cmdDeleteAllPortals,
 		cmdExec,
 		cmdCommands,
-		cmdMapEmoji,
 	)
 }
 
@@ -899,140 +897,4 @@ func fnDeleteAllPortals(ce *WrappedCommandEvent) {
 		}
 		ce.Reply("Finished background cleanup of deleted portal rooms.")
 	}()
-}
-
-var matrixEmoticonParser = &ext_format.ExtendedHTMLParser{
-	TabsToSpaces:   4,
-	Newline:        "\n",
-	HorizontalLine: "\n---\n",
-	TextConverter: func(s string, ctx ext_format.Context) string {
-		return ""
-	},
-	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
-		return fmt.Sprintf("%s:%s", strings.Trim(alt, ":"), strings.TrimPrefix(src, "mxc://"))
-	},
-}
-
-func fnMapEmoji(ce *WrappedCommandEvent) {
-	if len(ce.Args) < 2 {
-		ce.Reply("**Usage** (set): `$cmdprefix map-emoji set <Matrix emoji> <Discord emoji ID> [--name <Discord emoji name>]`\n" +
-			"**Usage** (unset): `$cmdprefix map-emoji unset <Matrix emoji>`")
-		return
-	}
-	fail := false
-	var set bool
-	if ce.Args[0] == "set" {
-		set = true
-		if len(ce.Args) < 3 {
-			fail = true
-		}
-	} else if ce.Args[0] == "unset" {
-		set = false
-	} else {
-		fail = true
-	}
-
-	if fail {
-		ce.Reply("**Usage** (set): `$cmdprefix map-emoji set <Matrix emoji> <Discord emoji ID> [--name <Discord emoji name>]`\n" +
-			"**Usage** (unset): `$cmdprefix map-emoji unset <Matrix emoji>`")
-		return
-	}
-
-	nextIsName := false
-	matrixEmojiHTML := ""
-	discordEmojiId := ""
-	discordEmojiName := ""
-	for _, arg := range ce.Args[1:] {
-		if arg == "--name" {
-			nextIsName = true
-		} else if nextIsName {
-			discordEmojiName = arg
-		} else if matrixEmojiHTML == "" {
-			matrixEmojiHTML = arg
-		} else if discordEmojiId == "" {
-			discordEmojiId = arg
-		} else {
-			fail = true
-		}
-	}
-
-	if ce.Portal == nil {
-		ce.Reply("This command only works in non-management room")
-		return
-	}
-
-	ev, err := ce.Portal.getEvent(ce.EventID)
-	if err != nil {
-		ce.Reply("Failed to get message event")
-		return
-	}
-	if ev.Type.Class != event.MessageEventType {
-		ce.Reply("Somehow the event is not message!?")
-		return
-	}
-	content := ev.Content.AsMessage()
-	if content.Format != event.FormatHTML || len(content.FormattedBody) == 0 {
-		ce.Reply("Command doesn't include a valid emoji")
-		return
-	}
-
-	ctx := ext_format.NewContext()
-	ctx.ReturnData[formatterContextPortalKey] = ce.Portal
-	matrixEmoji := matrixEmoticonParser.Parse(content.FormattedBody, ctx)
-	// extremely jank img tag extractor
-	endAngleSplit := strings.Split("<"+strings.Join(strings.Split(content.FormattedBody, "<")[1:], "<"), ">")
-	matrixEmojiHTML = strings.Join(endAngleSplit[:len(endAngleSplit)-1], ">") + ">"
-
-	if fail || matrixEmoji == "" || (set && discordEmojiId == "") {
-		ce.Reply("**Usage** (set): `$cmdprefix map-emoji set <Matrix emoji> <Discord emoji ID> [--name <Discord emoji name>]`\n" +
-			"**Usage** (unset): `$cmdprefix map-emoji unset <Matrix emoji>`")
-		return
-	}
-
-	matrixEmojiSplit := strings.Split(matrixEmoji, ":")
-	matrixEmojiAlt := matrixEmojiSplit[0]
-	matrixEmojiMXC := strings.Join(matrixEmojiSplit[1:], ":")
-
-	if matrixEmojiAlt == "" {
-		ce.Reply("Emoji alt text is missing")
-		return
-	}
-	if matrixEmojiMXC == "" {
-		ce.Reply("Emoji MXC is missing")
-		return
-	}
-
-	if !set {
-		emoticon := ce.Portal.bridge.DB.Emoticon.GetByMXIDAndMXC(ce.User.MXID, matrixEmojiMXC)
-		if emoticon == nil {
-			ce.ReplyAdvanced(fmt.Sprintf("No mapping of %s found", matrixEmojiHTML), true, true)
-			return
-		}
-		emoticon.Delete()
-		ce.ReplyAdvanced(fmt.Sprintf("Deleted mapping of %s", matrixEmojiHTML), true, true)
-		return
-	}
-
-	if discordEmojiName == "" {
-		discordEmojiName = matrixEmojiAlt
-	}
-
-	emoticon := ce.Portal.bridge.DB.Emoticon.New()
-	emoticon.MXID = ce.User.MXID
-	emoticon.MXC = matrixEmojiMXC
-	emoticon.MXAlt = matrixEmojiAlt
-	emoticon.DCID = discordEmojiId
-	emoticon.DCName = discordEmojiName
-	emoticon.Insert()
-	ce.ReplyAdvanced(fmt.Sprintf("Mapped %s to `<:%s:%s>`", matrixEmojiHTML, discordEmojiName, discordEmojiId), true, true)
-}
-
-var cmdMapEmoji = &commands.FullHandler{
-	Func: wrapCommand(fnMapEmoji),
-	Name: "map-emoji",
-	Help: commands.HelpMeta{
-		Section:     HelpSectionPortalManagement,
-		Description: "Map a Matrix custom emoji to a Discord custom emoji.",
-	},
-	RequiresAdmin: false,
 }
