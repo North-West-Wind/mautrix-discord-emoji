@@ -14,16 +14,17 @@ import (
 type Database struct {
 	*dbutil.Database
 
-	User     *UserQuery
-	Portal   *PortalQuery
-	Puppet   *PuppetQuery
-	Message  *MessageQuery
-	Thread   *ThreadQuery
-	Reaction *ReactionQuery
-	Guild    *GuildQuery
-	Role     *RoleQuery
-	File     *FileQuery
-	Emoticon *EmoticonQuery
+	User       *UserQuery
+	Portal     *PortalQuery
+	Puppet     *PuppetQuery
+	Message    *MessageQuery
+	Thread     *ThreadQuery
+	Reaction   *ReactionQuery
+	Guild      *GuildQuery
+	Role       *RoleQuery
+	File       *FileQuery
+	Emoticon   *EmoticonQuery
+	GuildEmoji *GuildEmojiQuery
 }
 
 func New(baseDB *dbutil.Database, log maulogger.Logger) *Database {
@@ -68,6 +69,10 @@ func New(baseDB *dbutil.Database, log maulogger.Logger) *Database {
 	db.Emoticon = &EmoticonQuery{
 		db:  db,
 		log: log.Sub("Emoticon"),
+	}
+	db.GuildEmoji = &GuildEmojiQuery{
+		db:  db,
+		log: log.Sub("GuildEmoji"),
 	}
 	return db
 }

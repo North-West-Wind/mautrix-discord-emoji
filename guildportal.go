@@ -19,6 +19,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	log "maunium.net/go/maulogger/v2"
@@ -40,8 +41,10 @@ type Guild struct {
 	bridge *DiscordBridge
 	log    log.Logger
 
-	roomCreateLock sync.Mutex
-	emojis         []*discordgo.Emoji
+	roomCreateLock      sync.Mutex
+	emojis              map[string]*database.GuildEmoji
+	discordEmojis       []*discordgo.Emoji
+	allowExternalEmojis bool
 }
 
 func (br *DiscordBridge) loadGuild(dbGuild *database.Guild, id string, createIfNotExist bool) *Guild {
@@ -115,10 +118,15 @@ func (br *DiscordBridge) dbGuildsToGuilds(dbGuilds []*database.Guild) []*Guild {
 }
 
 func (br *DiscordBridge) NewGuild(dbGuild *database.Guild) *Guild {
+	emojis := map[string]*database.GuildEmoji{}
+	for _, emoji := range br.DB.GuildEmoji.GetAllByGuildID(dbGuild.ID) {
+		emojis[emoji.EmojiName] = emoji
+	}
 	guild := &Guild{
 		Guild:  dbGuild,
 		bridge: br,
 		log:    br.Log.Sub(fmt.Sprintf("Guild/%s", dbGuild.ID)),
+		emojis: emojis,
 	}
 
 	return guild
@@ -240,6 +248,7 @@ func (guild *Guild) UpdateInfo(source *User, meta *discordgo.Guild) *discordgo.G
 	}
 	// handle emoji fetching
 	guild.UpdateEmojis(meta)
+	guild.allowExternalEmojis = meta.Permissions&discordgo.PermissionUseExternalEmojis != 0
 	source.ensureInvited(nil, guild.MXID, false, false)
 	return meta
 }
@@ -296,8 +305,98 @@ func (guild *Guild) UpdateAvatar(iconID string) bool {
 	return true
 }
 
+var ImagePack = event.Type{Type: "im.ponies.room_emotes", Class: event.StateEventType}
+
+type ImagePackPack struct {
+	DisplayName string   `json:"display_name,omitempty"`
+	AvatarURL   string   `json:"avatar_url,omitempty"`
+	Usage       []string `json:"usage,omitempty"`
+	Attribution string   `json:"attribution,omitempty"`
+}
+
+type ImagePackImage struct {
+	URL   string   `json:"url"`
+	Usage []string `json:"usage,omitempty"`
+}
+
+type ImagePackEventContent struct {
+	Pack   ImagePackPack             `json:"pack"`
+	Images map[string]ImagePackImage `json:"images"`
+}
+
 func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
-	guild.emojis = meta.Emojis
+	guild.discordEmojis = meta.Emojis
+	emojis := map[string]*database.GuildEmoji{}
+	for _, emoji := range meta.Emojis {
+		if emoji.Animated {
+			// skip animated for now
+			continue
+		}
+		converted := guild.bridge.DB.GuildEmoji.New()
+		converted.FromDiscord(meta.ID, emoji)
+		emojis[converted.EmojiName] = converted
+	}
+	changed := len(emojis) != len(guild.emojis)
+	for name, emoji := range emojis {
+		existing := guild.emojis[name]
+		if existing != nil {
+			emoji.MXC = existing.MXC
+		} else {
+			changed = true
+			split := strings.Split(name, ":")
+			copied, err := guild.bridge.copyAttachmentToMatrix(guild.bridge.Bot, discordgo.EndpointEmoji(split[len(split)-1]), false, AttachmentMeta{
+				AttachmentID: fmt.Sprintf("guild_emoji/%s/%s", guild.ID, name),
+			})
+			if err != nil {
+				guild.log.Warnfln("Failed to upload guild emoji %s: %v", name, err)
+				// we still allow processing of other emojis
+			} else {
+				emoji.MXC = strings.TrimPrefix(copied.MXC.String(), "mxc://")
+			}
+		}
+	}
+	// self-handling changes because it doesn't have anything to do with the guild
+	if changed {
+		for name, emoji := range guild.emojis {
+			// remove those that doesn't exist anymore
+			if emojis[name] == nil {
+				emoji.Delete()
+				guild.emojis[name] = nil
+			}
+		}
+		for name, emoji := range emojis {
+			// add all the new ones that didn't exist in the database
+			if guild.emojis[name] == nil {
+				emoji.Insert()
+				guild.emojis[name] = emoji
+			}
+		}
+		// update image pack
+		if guild.MXID != "" {
+			content := ImagePackEventContent{
+				Pack: ImagePackPack{
+					DisplayName: guild.PlainName,
+					AvatarURL:   guild.AvatarURL.String(),
+					Usage:       []string{"emoticon", "sticker"},
+				},
+				Images: map[string]ImagePackImage{},
+			}
+			for name, emoji := range emojis {
+				if emoji.MXC == "" {
+					continue
+				}
+				split := strings.Split(name, ":")
+				emojiName := strings.Join(split[:len(split)-1], ":")
+				content.Images[emojiName] = ImagePackImage{
+					URL: "mxc://" + emoji.MXC,
+				}
+			}
+			_, err := guild.bridge.Bot.SendStateEvent(guild.MXID, ImagePack, guild.ID, content)
+			if err != nil {
+				guild.log.Warnln("Failed to update im.ponies.room_emotes:", err)
+			}
+		}
+	}
 }
 
 func (guild *Guild) cleanup() {

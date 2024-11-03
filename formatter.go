@@ -227,23 +227,61 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 		return fmt.Sprintf("[%s](%s)", escapeDiscordMarkdown(text), href)
 	},
 	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
+		src = strings.TrimPrefix(src, "mxc://")
 		alt = strings.Trim(alt, ":")
 		portal := ctx.ReturnData[formatterContextPortalKey].(*Portal)
-		var emoticon *database.Emoticon
-		if src != "" {
-			emoticon = portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(src, "mxc://"))
-		} else if alt != "" {
-			emoticon = portal.bridge.DB.Emoticon.GetByAlt(alt)
+		// 4 layers guild emoji searching:
+		// 1. current guild db
+		// 2. other guilds db
+		// 3. current guild discord
+		// 4. other guilds discord
+		var guildEmoji *database.GuildEmoji
+		for name, emoji := range portal.Guild.emojis {
+			split := strings.Split(name, ":")
+			emojiName := strings.Join(split[:len(split)-1], ":")
+			if alt == emojiName || src == emoji.MXC {
+				guildEmoji = emoji
+				break
+			}
 		}
-		if emoticon != nil {
-			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
-		} else if alt != "" {
+		if guildEmoji == nil && portal.Guild.allowExternalEmojis {
+			// Find in other guilds
+			for id, guild := range portal.bridge.guildsByID {
+				if id == portal.GuildID {
+					// Skip searched guild
+					continue
+				}
+				for name, emoji := range guild.emojis {
+					split := strings.Split(name, ":")
+					emojiName := strings.Join(split[:len(split)-1], ":")
+					if alt == emojiName || src == emoji.MXC {
+						guildEmoji = emoji
+						break
+					}
+				}
+			}
+		}
+		if guildEmoji == nil {
 			// Fallback to guild fetching
 			// Prioritize current guild
-			for _, emoji := range portal.Guild.emojis {
+			for _, emoji := range portal.Guild.discordEmojis {
 				if emoji.Name == alt {
 					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
 				}
+			}
+		}
+		if guildEmoji != nil {
+			return fmt.Sprintf("<:%s>", guildEmoji.EmojiName)
+		} else if alt != "" {
+			// Fallback to guild fetching
+			// Prioritize current guild
+			for _, emoji := range portal.Guild.discordEmojis {
+				if emoji.Name == alt {
+					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
+				}
+			}
+			if !portal.Guild.allowExternalEmojis {
+				return fmt.Sprintf(":%s:", alt)
 			}
 			// Find in other guilds
 			for id, guild := range portal.bridge.guildsByID {
@@ -251,7 +289,7 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 					// Skip searched guild
 					continue
 				}
-				for _, emoji := range guild.emojis {
+				for _, emoji := range guild.discordEmojis {
 					if emoji.Name == alt {
 						return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
 					}
