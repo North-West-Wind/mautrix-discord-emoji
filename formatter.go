@@ -227,12 +227,13 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 		return fmt.Sprintf("[%s](%s)", escapeDiscordMarkdown(text), href)
 	},
 	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
+		alt = strings.Trim(alt, ":")
 		portal := ctx.ReturnData[formatterContextPortalKey].(*Portal)
 		var emoticon *database.Emoticon
 		if src != "" {
 			emoticon = portal.bridge.DB.Emoticon.GetByMXC(strings.TrimPrefix(src, "mxc://"))
 		} else if alt != "" {
-			emoticon = portal.bridge.DB.Emoticon.GetByAlt(strings.Trim(alt, ":"))
+			emoticon = portal.bridge.DB.Emoticon.GetByAlt(alt)
 		}
 		if emoticon != nil {
 			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
