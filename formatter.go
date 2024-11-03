@@ -273,9 +273,6 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 			}
 		}
 		if guildEmoji != nil {
-			if src != guildEmoji.MXC {
-				guildEmoji.OtherMXCs[src] = true
-			}
 			return fmt.Sprintf("<:%s>", guildEmoji.EmojiName)
 		} else if alt != "" {
 			// Fallback to guild fetching

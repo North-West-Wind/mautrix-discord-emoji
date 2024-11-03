@@ -1902,7 +1902,7 @@ func (portal *Portal) handleMatrixReaction(sender *User, evt *event.Event) {
 			trimmed := strings.TrimPrefix(emojiID, "mxc://")
 			var emoticon *database.GuildEmoji
 			for _, emoji := range portal.Guild.emojis {
-				if trimmed == emoji.MXC || emoji.OtherMXCs[trimmed] {
+				if trimmed == emoji.MXC {
 					emoticon = emoji
 					break
 				}

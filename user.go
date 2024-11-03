@@ -596,6 +596,8 @@ func (user *User) eventHandler(rawEvt any) {
 		user.guildDeleteHandler(evt)
 	case *discordgo.GuildUpdate:
 		user.guildUpdateHandler(evt)
+	case *discordgo.GuildEmojisUpdate:
+		user.guildEmojiUpdateHandler(evt)
 	case *discordgo.GuildRoleCreate:
 		user.discordRoleToDB(evt.GuildID, evt.Role, nil, nil)
 	case *discordgo.GuildRoleUpdate:
@@ -968,6 +970,11 @@ func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSp
 	user.addGuildToSpace(guild, isInSpace, timestamp)
 }
 
+func (user *User) handleGuildEmoji(guildID string, emojis []*discordgo.Emoji) {
+	guild := user.bridge.GetGuildByID(guildID, true)
+	guild.UpdateEmojis(emojis)
+}
+
 func (user *User) connectedHandler(_ *discordgo.Connect) {
 	user.bridgeStateLock.Lock()
 	defer user.bridgeStateLock.Unlock()
@@ -1031,6 +1038,11 @@ func (user *User) guildDeleteHandler(g *discordgo.GuildDelete) {
 func (user *User) guildUpdateHandler(g *discordgo.GuildUpdate) {
 	user.log.Debug().Str("guild_id", g.ID).Msg("Got guild update event")
 	user.handleGuild(g.Guild, time.Now(), user.IsInSpace(g.ID))
+}
+
+func (user *User) guildEmojiUpdateHandler(g *discordgo.GuildEmojisUpdate) {
+	user.log.Debug().Str("guild_id", g.GuildID).Msg("Got guild emoji update event")
+	user.handleGuildEmoji(g.GuildID, g.Emojis)
 }
 
 func (user *User) threadListSyncHandler(t *discordgo.ThreadListSync) {
