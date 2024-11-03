@@ -177,6 +177,7 @@ func (guild *Guild) CreateMatrixRoom(user *User, meta *discordgo.Guild) error {
 	}
 	guild.log.Infoln("Creating Matrix room for guild")
 	guild.UpdateInfo(user, meta)
+	guild.UpdateEmojis(meta.Emojis)
 
 	bridgeInfoStateKey, bridgeInfo := guild.getBridgeInfo()
 
@@ -246,8 +247,6 @@ func (guild *Guild) UpdateInfo(source *User, meta *discordgo.Guild) *discordgo.G
 		guild.UpdateBridgeInfo()
 		guild.Update()
 	}
-	// handle emoji fetching
-	guild.UpdateEmojis(meta)
 	source.ensureInvited(nil, guild.MXID, false, false)
 	return meta
 }
@@ -323,21 +322,21 @@ type ImagePackEventContent struct {
 	Images map[string]ImagePackImage `json:"images"`
 }
 
-func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
+func (guild *Guild) UpdateEmojis(emojis []*discordgo.Emoji) {
 	guild.log.Debugfln("Updating emojis for %s", guild.ID)
-	guild.discordEmojis = meta.Emojis
-	emojis := map[string]*database.GuildEmoji{}
-	for _, emoji := range meta.Emojis {
+	guild.discordEmojis = emojis
+	newEmojis := map[string]*database.GuildEmoji{}
+	for _, emoji := range emojis {
 		if emoji.Animated {
 			// skip animated for now
 			continue
 		}
 		converted := guild.bridge.DB.GuildEmoji.New()
-		converted.FromDiscord(meta.ID, emoji)
-		emojis[converted.EmojiName] = converted
+		converted.FromDiscord(guild.ID, emoji)
+		newEmojis[converted.EmojiName] = converted
 	}
-	changed := len(emojis) != len(guild.emojis)
-	for name, emoji := range emojis {
+	changed := len(newEmojis) != len(guild.emojis)
+	for name, emoji := range newEmojis {
 		existing := guild.emojis[name]
 		if existing != nil {
 			emoji.MXC = existing.MXC
@@ -360,12 +359,12 @@ func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
 		guild.log.Debugfln("Emoji set is different for %s", guild.ID)
 		for name, emoji := range guild.emojis {
 			// remove those that doesn't exist anymore
-			if emojis[name] == nil {
+			if newEmojis[name] == nil {
 				emoji.Delete()
 				delete(guild.emojis, name)
 			}
 		}
-		for name, emoji := range emojis {
+		for name, emoji := range newEmojis {
 			// add all the new ones that didn't exist in the database
 			if guild.emojis[name] == nil {
 				emoji.Insert()
@@ -382,7 +381,7 @@ func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
 				},
 				Images: map[string]ImagePackImage{},
 			}
-			for name, emoji := range emojis {
+			for name, emoji := range newEmojis {
 				if emoji.MXC == "" {
 					continue
 				}
