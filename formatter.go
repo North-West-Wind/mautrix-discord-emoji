@@ -237,6 +237,25 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 		if emoticon != nil {
 			return fmt.Sprintf("<:%s:%s>", emoticon.DCName, emoticon.DCID)
 		} else if alt != "" {
+			// Fallback to guild fetching
+			// Prioritize current guild
+			for _, emoji := range portal.Guild.emojis {
+				if emoji.Name == alt {
+					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
+				}
+			}
+			// Find in other guilds
+			for id, guild := range portal.bridge.guildsByID {
+				if id == portal.GuildID {
+					// Skip searched guild
+					continue
+				}
+				for _, emoji := range guild.emojis {
+					if emoji.Name == alt {
+						return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
+					}
+				}
+			}
 			return fmt.Sprintf(":%s:", alt)
 		}
 		return ""

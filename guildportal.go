@@ -41,6 +41,7 @@ type Guild struct {
 	log    log.Logger
 
 	roomCreateLock sync.Mutex
+	emojis         []*discordgo.Emoji
 }
 
 func (br *DiscordBridge) loadGuild(dbGuild *database.Guild, id string, createIfNotExist bool) *Guild {
@@ -237,6 +238,8 @@ func (guild *Guild) UpdateInfo(source *User, meta *discordgo.Guild) *discordgo.G
 		guild.UpdateBridgeInfo()
 		guild.Update()
 	}
+	// handle emoji fetching
+	guild.UpdateEmojis(meta)
 	source.ensureInvited(nil, guild.MXID, false, false)
 	return meta
 }
@@ -291,6 +294,10 @@ func (guild *Guild) UpdateAvatar(iconID string) bool {
 		}
 	}
 	return true
+}
+
+func (guild *Guild) UpdateEmojis(meta *discordgo.Guild) {
+	guild.emojis = meta.Emojis
 }
 
 func (guild *Guild) cleanup() {
