@@ -36,6 +36,7 @@ import (
 
 	"go.mau.fi/mautrix-discord/config"
 	"go.mau.fi/mautrix-discord/database"
+	"go.mau.fi/mautrix-discord/ext_format"
 )
 
 type portalDiscordMessage struct {
@@ -1491,7 +1492,14 @@ func (portal *Portal) convertReplyMessageToEmbed(eventID id.EventID, url string)
 	} else {
 		targetUser = evt.Sender.String()
 	}
-	body := escapeDiscordMarkdown(cutBody(content.Body))
+	var body string
+	if content.Format == event.FormatHTML {
+		ctx := ext_format.NewContext()
+		ctx.ReturnData[formatterContextPortalKey] = portal
+		body = matrixHTMLParser.Parse(content.FormattedBody, ctx)
+	} else {
+		body = escapeDiscordMarkdown(cutBody(content.Body))
+	}
 	body = fmt.Sprintf("**[Replying to](%s) %s**\n%s", url, targetUser, body)
 	embed := &discordgo.MessageEmbed{Description: body}
 	return embed, nil
