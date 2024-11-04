@@ -326,10 +326,6 @@ func (guild *Guild) UpdateEmojis(emojis []*discordgo.Emoji) {
 	guild.discordEmojis = emojis
 	newEmojis := map[string]*database.GuildEmoji{}
 	for _, emoji := range emojis {
-		if emoji.Animated {
-			// skip animated for now
-			continue
-		}
 		converted := guild.bridge.DB.GuildEmoji.New()
 		converted.FromDiscord(guild.ID, emoji)
 		newEmojis[converted.EmojiName] = converted
@@ -342,7 +338,13 @@ func (guild *Guild) UpdateEmojis(emojis []*discordgo.Emoji) {
 		} else {
 			changed = true
 			split := strings.Split(name, ":")
-			copied, err := guild.bridge.copyAttachmentToMatrix(guild.bridge.Bot, discordgo.EndpointEmoji(split[len(split)-1]), false, AttachmentMeta{
+			var endpoint string
+			if emoji.Animated {
+				endpoint = discordgo.EndpointEmojiAnimated(split[len(split)-1])
+			} else {
+				endpoint = discordgo.EndpointEmoji(split[len(split)-1])
+			}
+			copied, err := guild.bridge.copyAttachmentToMatrix(guild.bridge.Bot, endpoint, false, AttachmentMeta{
 				AttachmentID: fmt.Sprintf("guild_emoji/%s/%s", guild.ID, name),
 			})
 			if err != nil {

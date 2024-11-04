@@ -16,13 +16,13 @@ type GuildEmojiQuery struct {
 }
 
 const (
-	guildReactionSelect = "SELECT dc_guild_id, dc_emoji_name, mxc FROM guild_emoji"
+	guildReactionSelect = "SELECT dc_guild_id, dc_emoji_name, mxc, animated FROM guild_emoji"
 )
 
-func (eq *GuildEmojiQuery) New() *GuildEmoji {
+func (geq *GuildEmojiQuery) New() *GuildEmoji {
 	return &GuildEmoji{
-		db:  eq.db,
-		log: eq.log,
+		db:  geq.db,
+		log: geq.log,
 	}
 }
 
@@ -74,10 +74,11 @@ type GuildEmoji struct {
 	GuildID   string
 	EmojiName string
 	MXC       string
+	Animated  bool
 }
 
 func (e *GuildEmoji) Scan(row dbutil.Scannable) *GuildEmoji {
-	err := row.Scan(&e.GuildID, &e.EmojiName, &e.MXC)
+	err := row.Scan(&e.GuildID, &e.EmojiName, &e.MXC, &e.Animated)
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			e.log.Errorln("Database scan failed:", err)
@@ -89,28 +90,29 @@ func (e *GuildEmoji) Scan(row dbutil.Scannable) *GuildEmoji {
 	return e
 }
 
-func (r *GuildEmoji) Insert() {
+func (e *GuildEmoji) Insert() {
 	query := `
-		INSERT INTO guild_emoji (dc_guild_id, dc_emoji_name, mxc)
-		VALUES($1, $2, $3)
+		INSERT INTO guild_emoji (dc_guild_id, dc_emoji_name, mxc, animated)
+		VALUES($1, $2, $3, $4)
 	`
-	_, err := r.db.Exec(query, r.GuildID, r.EmojiName, r.MXC)
+	_, err := e.db.Exec(query, e.GuildID, e.EmojiName, e.MXC, e.Animated)
 	if err != nil {
-		r.log.Warnfln("Failed to insert reaction for %s@%s: %v", r.GuildID, r.EmojiName, err)
+		e.log.Warnfln("Failed to insert reaction for %s@%s: %v", e.GuildID, e.EmojiName, err)
 		panic(err)
 	}
 }
 
-func (r *GuildEmoji) Delete() {
+func (e *GuildEmoji) Delete() {
 	query := "DELETE FROM guild_emoji WHERE dc_guild_id=$1 AND dc_emoji_name=$2"
-	_, err := r.db.Exec(query, r.GuildID, r.EmojiName)
+	_, err := e.db.Exec(query, e.GuildID, e.EmojiName)
 	if err != nil {
-		r.log.Warnfln("Failed to delete reaction for %s@%s: %v", r.GuildID, r.EmojiName, err)
+		e.log.Warnfln("Failed to delete reaction for %s@%s: %v", e.GuildID, e.EmojiName, err)
 		panic(err)
 	}
 }
 
-func (r *GuildEmoji) FromDiscord(guildID string, emoji *discordgo.Emoji) {
-	r.GuildID = guildID
-	r.EmojiName = fmt.Sprintf("%s:%s", emoji.Name, emoji.ID)
+func (e *GuildEmoji) FromDiscord(guildID string, emoji *discordgo.Emoji) {
+	e.GuildID = guildID
+	e.EmojiName = fmt.Sprintf("%s:%s", emoji.Name, emoji.ID)
+	e.Animated = emoji.Animated
 }

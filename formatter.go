@@ -263,24 +263,27 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 				}
 			}
 		}
-		if guildEmoji == nil {
-			// Fallback to guild fetching
-			// Prioritize current guild
-			for _, emoji := range portal.Guild.discordEmojis {
-				if emoji.Name == alt {
-					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
-				}
-			}
-		}
 		if guildEmoji != nil {
-			return fmt.Sprintf("<:%s>", guildEmoji.EmojiName)
+			var template string
+			if guildEmoji.Animated {
+				template = "<a:%s>"
+			} else {
+				template = "<:%s>"
+			}
+			return fmt.Sprintf(template, guildEmoji.EmojiName)
 		} else if alt != "" {
 			// Fallback to guild fetching
 			// Prioritize current guild
 			for _, emoji := range portal.Guild.discordEmojis {
 				if emoji.Name == alt {
 					portal.log.Debug().Msg("Found emoji in layer 3")
-					return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
+					var template string
+					if emoji.Animated {
+						template = "<a:%s:%s>"
+					} else {
+						template = "<:%s:%s>"
+					}
+					return fmt.Sprintf(template, emoji.Name, emoji.ID)
 				}
 			}
 			// Find in other guilds
@@ -292,7 +295,13 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 				for _, emoji := range guild.discordEmojis {
 					if emoji.Name == alt {
 						portal.log.Debug().Msg("Found emoji in layer 4")
-						return fmt.Sprintf("<:%s:%s>", emoji.Name, emoji.ID)
+						var template string
+						if emoji.Animated {
+							template = "<a:%s:%s>"
+						} else {
+							template = "<:%s:%s>"
+						}
+						return fmt.Sprintf(template, emoji.Name, emoji.ID)
 					}
 				}
 			}
