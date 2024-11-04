@@ -1466,6 +1466,13 @@ func (user *User) bridgeGuild(guildID string, everything bool) error {
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to subscribe to guild")
 		}
+		// update emojis
+		emojis, err := user.Session.GuildEmojis(guildID)
+		if err != nil {
+			user.log.Warn().Err(err).Msgf("Failed to update emojis for guild %s while subscribing", guild.ID)
+		} else {
+			user.handleGuildEmoji(guildID, emojis)
+		}
 	}
 
 	return nil
