@@ -338,20 +338,34 @@ func (guild *Guild) UpdateEmojis(emojis []*discordgo.Emoji) {
 		} else {
 			changed = true
 			split := strings.Split(name, ":")
-			var endpoint string
-			if emoji.Animated {
-				endpoint = discordgo.EndpointEmojiAnimated(split[len(split)-1])
-			} else {
-				endpoint = discordgo.EndpointEmoji(split[len(split)-1])
+			emojiID := split[len(split)-1]
+			var mxc id.ContentURI
+			// if direct media api exists, use it
+			if guild.bridge.DMA != nil {
+				mxc = guild.bridge.DMA.EmojiMXC(emojiID, name, emoji.Animated)
+				if mxc.IsEmpty() {
+					guild.log.Warnfln("DMA emoji MXC is empty. Falling back to attachment copy...")
+				}
 			}
-			copied, err := guild.bridge.copyAttachmentToMatrix(guild.bridge.Bot, endpoint, false, AttachmentMeta{
-				AttachmentID: fmt.Sprintf("guild_emoji/%s/%s", guild.ID, name),
-			})
-			if err != nil {
-				guild.log.Warnfln("Failed to upload guild emoji %s: %v", name, err)
-				// we still allow processing of other emojis
-			} else {
-				emoji.MXC = strings.TrimPrefix(copied.MXC.String(), "mxc://")
+			if mxc.IsEmpty() { // if no direct media, upload to server
+				var endpoint string
+				if emoji.Animated {
+					endpoint = discordgo.EndpointEmojiAnimated(emojiID)
+				} else {
+					endpoint = discordgo.EndpointEmoji(emojiID)
+				}
+				copied, err := guild.bridge.copyAttachmentToMatrix(guild.bridge.Bot, endpoint, false, AttachmentMeta{
+					AttachmentID: fmt.Sprintf("guild_emoji/%s/%s", guild.ID, name),
+				})
+				if err != nil {
+					guild.log.Warnfln("Failed to upload guild emoji %s: %v", name, err)
+					// we still allow processing of other emojis
+				} else {
+					mxc = copied.MXC
+				}
+			}
+			if !mxc.IsEmpty() {
+				emoji.MXC = strings.TrimPrefix(mxc.String(), "mxc://")
 			}
 		}
 	}
