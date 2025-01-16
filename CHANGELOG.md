@@ -1,3 +1,12 @@
+# v0.7.2 (2024-12-16)
+
+* Fixed some headers being set incorrectly.
+
+# v0.7.1 (2024-11-16)
+
+* Bumped minimum Go version to 1.22.
+* Updated Discord version numbers.
+
 # v0.7.0 (2024-07-16)
 
 * Bumped minimum Go version to 1.21.

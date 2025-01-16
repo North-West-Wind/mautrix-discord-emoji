@@ -101,7 +101,7 @@ func (portal *Portal) cleanupConvertedStickerInfo(content *event.MessageEventCon
 	}
 }
 
-func (portal *Portal) convertDiscordSticker(ctx context.Context, intent *appservice.IntentAPI, sticker *discordgo.Sticker) *ConvertedMessage {
+func (portal *Portal) convertDiscordSticker(ctx context.Context, intent *appservice.IntentAPI, sticker *discordgo.StickerItem) *ConvertedMessage {
 	var mime string
 	switch sticker.FormatType {
 	case discordgo.StickerFormatTypePNG:
@@ -252,6 +252,7 @@ func (portal *Portal) convertDiscordVideoEmbed(ctx context.Context, intent *apps
 	if content.MsgType == event.MsgVideo && embed.Type == discordgo.EmbedTypeGifv {
 		extra["info"] = map[string]any{
 			"fi.mau.discord.gifv":  true,
+			"fi.mau.gif":           true,
 			"fi.mau.loop":          true,
 			"fi.mau.autoplay":      true,
 			"fi.mau.hide_controls": true,

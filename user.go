@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -546,6 +549,19 @@ func (user *User) Connect() error {
 	if err != nil {
 		return err
 	}
+	if user.bridge.Config.Bridge.Proxy != "" {
+		u, _ := url.Parse(user.bridge.Config.Bridge.Proxy)
+		tlsConf := &tls.Config{
+			InsecureSkipVerify: os.Getenv("DISCORD_SKIP_TLS_VERIFICATION") == "true",
+		}
+		session.Client.Transport = &http.Transport{
+			Proxy:             http.ProxyURL(u),
+			TLSClientConfig:   tlsConf,
+			ForceAttemptHTTP2: true,
+		}
+		session.Dialer.Proxy = http.ProxyURL(u)
+		session.Dialer.TLSClientConfig = tlsConf
+	}
 	// TODO move to config
 	if os.Getenv("DISCORD_DEBUG") == "1" {
 		session.LogLevel = discordgo.LogDebug
@@ -560,6 +576,11 @@ func (user *User) Connect() error {
 		session.Identify.Intents = BotIntents
 	}
 	session.EventHandler = user.eventHandlerSync
+
+	err = session.LoadMainPage(context.TODO())
+	if err != nil {
+		user.log.Warn().Err(err).Msg("Failed to load main page")
+	}
 
 	user.Session = session
 
@@ -579,6 +600,15 @@ func (user *User) eventHandlerSync(rawEvt any) {
 }
 
 func (user *User) eventHandler(rawEvt any) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			user.log.Error().
+				Bytes(zerolog.ErrorStackFieldName, debug.Stack()).
+				Any(zerolog.ErrorFieldName, err).
+				Msg("Panic in Discord event handler")
+		}
+	}()
 	switch evt := rawEvt.(type) {
 	case *discordgo.Ready:
 		user.readyHandler(evt)
@@ -1004,6 +1034,15 @@ func (user *User) invalidAuthHandler(_ *discordgo.InvalidAuth) {
 	user.wasLoggedOut = true
 	user.BridgeState.Send(status.BridgeState{StateEvent: status.StateBadCredentials, Error: "dc-websocket-disconnect-4004", Message: "Discord access token is no longer valid, please log in again"})
 	go user.Logout(false)
+}
+
+func (user *User) handlePossible40002(err error) bool {
+	var restErr *discordgo.RESTError
+	if !errors.As(err, &restErr) || restErr.Message == nil || restErr.Message.Code != discordgo.ErrCodeActionRequiredVerifiedAccount {
+		return false
+	}
+	user.BridgeState.Send(status.BridgeState{StateEvent: status.StateBadCredentials, Error: "dc-http-40002", Message: restErr.Message.Message})
+	return true
 }
 
 func (user *User) guildCreateHandler(g *discordgo.GuildCreate) {
