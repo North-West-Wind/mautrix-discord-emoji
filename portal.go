@@ -653,6 +653,27 @@ func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Mess
 	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
 	dbParts := make([]database.MessagePart, 0, len(parts))
 	eventIDs := zerolog.Dict()
+
+	forwardParts := portal.convertDiscordForwardedMessage(ctx, puppet, intent, msg)
+	if len(forwardParts) > 0 {
+		for i, part := range forwardParts {
+			resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli())
+			if err != nil {
+				log.Err(err).
+					Int("part_index", i).
+					Str("attachment_id", part.AttachmentID).
+					Msg("Failed to send part of message to Matrix")
+				continue
+			}
+			lastThreadEvent = resp.EventID
+			dbParts = append(dbParts, database.MessagePart{AttachmentID: part.AttachmentID, MXID: resp.EventID})
+			eventIDs.Str(part.AttachmentID, resp.EventID.String())
+			if i == 0 {
+				replyTo = &event.InReplyTo{EventID: resp.EventID}
+			}
+		}
+	}
+
 	for i, part := range parts {
 		if (replyTo != nil || threadRootEvent != "") && part.Content.RelatesTo == nil {
 			part.Content.RelatesTo = &event.RelatesTo{}
