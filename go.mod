@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.23.4
 
 require (
-	github.com/bwmarrin/discordgo v0.27.0
+	github.com/bwmarrin/discordgo v0.28.1
 	github.com/gabriel-vasile/mimetype v1.4.7
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/mux v1.8.0
@@ -42,4 +42,4 @@ require (
 	maunium.net/go/mauflag v1.0.0 // indirect
 )
 
-replace github.com/bwmarrin/discordgo => github.com/beeper/discordgo v0.0.0-20241129182205-d6dffc9bf133
+replace github.com/bwmarrin/discordgo => github.com/North-West-Wind/discordgo-forward v0.0.0-20250129103359-b3491699b1c2

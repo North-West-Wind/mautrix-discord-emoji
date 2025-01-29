@@ -268,6 +268,16 @@ func (portal *Portal) convertDiscordVideoEmbed(ctx context.Context, intent *apps
 }
 
 func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
+	log := zerolog.Ctx(ctx)
+	if msg.MessageReference.Type == discordgo.MessageReferenceTypeForward {
+		ref := msg.MessageReference
+		message, err := puppet.customUser.Session.ChannelMessage(ref.ChannelID, ref.MessageID)
+		if err != nil {
+			log.Err(err)
+			return []*ConvertedMessage{}
+		}
+		return portal.convertDiscordMessage(ctx, puppet, intent, message)
+	}
 	predictedLength := len(msg.Attachments) + len(msg.StickerItems)
 	if msg.Content != "" {
 		predictedLength++
@@ -276,7 +286,6 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 	if textPart := portal.convertDiscordTextMessage(ctx, intent, msg); textPart != nil {
 		parts = append(parts, textPart)
 	}
-	log := zerolog.Ctx(ctx)
 	handledIDs := make(map[string]struct{})
 	for _, att := range msg.Attachments {
 		if _, handled := handledIDs[att.ID]; handled {
