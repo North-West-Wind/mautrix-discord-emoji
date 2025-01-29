@@ -269,7 +269,7 @@ func (portal *Portal) convertDiscordVideoEmbed(ctx context.Context, intent *apps
 
 func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
 	log := zerolog.Ctx(ctx)
-	if msg.MessageReference.Type == discordgo.MessageReferenceTypeForward {
+	if msg.MessageReference != nil && msg.MessageReference.Type == discordgo.MessageReferenceTypeForward {
 		ref := msg.MessageReference
 		message, err := puppet.customUser.Session.ChannelMessage(ref.ChannelID, ref.MessageID)
 		if err != nil {
