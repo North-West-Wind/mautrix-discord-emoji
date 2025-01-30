@@ -331,7 +331,7 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 	return parts
 }
 
-func (portal *Portal) convertDiscordPartialMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.PartialMessage, id string) []*ConvertedMessage {
+func (portal *Portal) convertDiscordPartialMessage(ctx context.Context, intent *appservice.IntentAPI, msg *discordgo.PartialMessage, id string) []*ConvertedMessage {
 	predictedLength := len(msg.Attachments) + len(msg.StickerItems)
 	if msg.Content != "" {
 		predictedLength++
@@ -387,23 +387,39 @@ func (portal *Portal) convertDiscordPartialMessage(ctx context.Context, puppet *
 
 const msgForwardTemplateHTML = `<blockquote>Forwarded%s (<a href="%s/%s/%s">message</a>)</blockquote>`
 
-func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
+func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
 	log := zerolog.Ctx(ctx)
 	if msg.MessageReference != nil && msg.MessageReference.Type == discordgo.MessageReferenceTypeForward {
 		ref := msg.MessageReference
-		log.Debug().Msg("Message reference is Forward")
 		if len(msg.MessageSnapshots) == 0 {
 			log.Error().Msg("Forwarded message snapshot is empty")
 			return []*ConvertedMessage{}
 		}
 		snapshot := msg.MessageSnapshots[0]
 		if snapshot == nil {
-			log.Error().Msg("Could not find forwarded message")
 			return []*ConvertedMessage{}
 		}
 		message := snapshot.Message
-		log.Debug().Msg(fmt.Sprintf("Forward message content: %s", message.Content))
-		parts := portal.convertDiscordPartialMessage(ctx, puppet, intent, message, ref.MessageID)
+		parts := portal.convertDiscordPartialMessage(ctx, intent, message, ref.MessageID)
+		for _, part := range parts {
+			if part.Content.Format == event.FormatHTML {
+				part.Content.FormattedBody = fmt.Sprintf(`<blockquote>%s</blockquote>`, part.Content.FormattedBody)
+				split := strings.Split(part.Content.Body, "\n")
+				results := make([]string, len(split))
+				for _, s := range split {
+					results = append(results, "> "+s)
+				}
+				part.Content.Body = strings.Join(results, "\n")
+			} else {
+				split := strings.Split(part.Content.Body, "\n")
+				results := make([]string, len(split))
+				for _, s := range split {
+					results = append(results, "> "+s)
+				}
+				content := format.HTMLToContent(portal.renderDiscordMarkdownOnlyHTML(strings.Join(results, "\n"), false))
+				part.Content = &content
+			}
+		}
 		user := portal.bridge.usersByMXID[intent.UserID]
 		guildName := ""
 		if user != nil {
@@ -412,10 +428,9 @@ func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, puppet
 				log.Err(err).Msg("Could not get forward message guild")
 			} else {
 				guildName = fmt.Sprintf(" from %s", guild.Name)
-				log.Debug().Msg(fmt.Sprintf("Forward message guild name: %s", guild.Name))
 			}
 		}
-		html := fmt.Sprintf(msgForwardTemplateHTML, guildName, discordgo.EndpointChannel(ref.GuildID), ref.ChannelID, ref.MessageID)
+		html := fmt.Sprintf(msgForwardTemplateHTML, guildName, discordgo.EndpointDiscord+"channels/"+ref.GuildID, ref.ChannelID, ref.MessageID)
 		content := format.HTMLToContent(html)
 		return append([]*ConvertedMessage{{
 			Type:    event.EventMessage,

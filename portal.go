@@ -654,8 +654,8 @@ func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Mess
 	dbParts := make([]database.MessagePart, 0, len(parts))
 	eventIDs := zerolog.Dict()
 
-	forwardParts := portal.convertDiscordForwardedMessage(ctx, puppet, intent, msg)
-	if len(forwardParts) > 0 {
+	forwardParts := portal.convertDiscordForwardedMessage(ctx, intent, msg)
+	if replyTo != nil && replyTo.EventID.String() == "" && len(forwardParts) > 0 {
 		for i, part := range forwardParts {
 			resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli())
 			if err != nil {
@@ -665,9 +665,6 @@ func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Mess
 					Msg("Failed to send part of message to Matrix")
 				continue
 			}
-			lastThreadEvent = resp.EventID
-			dbParts = append(dbParts, database.MessagePart{AttachmentID: part.AttachmentID, MXID: resp.EventID})
-			eventIDs.Str(part.AttachmentID, resp.EventID.String())
 			if i == 0 {
 				replyTo = &event.InReplyTo{EventID: resp.EventID}
 			}
@@ -740,6 +737,10 @@ func (portal *Portal) getReplyTarget(source *User, threadID string, ref *discord
 	}
 	if ref == nil {
 		return nil
+	}
+	if ref.Type == discordgo.MessageReferenceTypeForward {
+		// way to say this is a forward message without changing too many things
+		return &event.InReplyTo{}
 	}
 	// TODO add config option for cross-room replies
 	crossRoomReplies := portal.bridge.Config.Homeserver.Software == bridgeconfig.SoftwareHungry
