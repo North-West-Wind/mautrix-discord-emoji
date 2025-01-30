@@ -899,7 +899,7 @@ func (portal *Portal) handleDiscordMessageUpdate(user *User, msg *discordgo.Mess
 	}
 	for _, remainingEmbed := range msg.Embeds {
 		// Other types of embeds are sent inline with the text message part
-		if getEmbedType(nil, remainingEmbed) != EmbedVideo {
+		if getEmbedType(nil, "", remainingEmbed) != EmbedVideo {
 			continue
 		}
 		embedID := "video_" + remainingEmbed.URL
@@ -922,7 +922,7 @@ func (portal *Portal) handleDiscordMessageUpdate(user *User, msg *discordgo.Mess
 	var converted *ConvertedMessage
 	// Slightly hacky special case: messages with gif links will get an embed with the gif.
 	// The link isn't rendered on Discord, so just edit the link message into a gif message on Matrix too.
-	if isPlainGifMessage(msg) {
+	if isPlainGifMessage(msg.Embeds, msg.Content) {
 		converted = portal.convertDiscordVideoEmbed(ctx, intent, msg.Embeds[0])
 	} else {
 		converted = portal.convertDiscordTextMessage(ctx, intent, msg)

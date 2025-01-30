@@ -42,4 +42,4 @@ require (
 	maunium.net/go/mauflag v1.0.0 // indirect
 )
 
-replace github.com/bwmarrin/discordgo => github.com/North-West-Wind/discordgo-forward v0.0.0-20250129103359-b3491699b1c2
+replace github.com/bwmarrin/discordgo => github.com/North-West-Wind/discordgo-forward v0.0.0-20250130053711-1566ec9e9804

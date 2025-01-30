@@ -300,7 +300,7 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 	}
 	for i, embed := range msg.Embeds {
 		// Ignore non-video embeds, they're handled in convertDiscordTextMessage
-		if getEmbedType(msg, embed) != EmbedVideo {
+		if getEmbedType(msg.Embeds, msg.Content, embed) != EmbedVideo {
 			continue
 		}
 		// Discord deduplicates embeds by URL. It makes things easier for us too.
@@ -331,16 +331,96 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 	return parts
 }
 
+func (portal *Portal) convertDiscordPartialMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.PartialMessage, id string) []*ConvertedMessage {
+	predictedLength := len(msg.Attachments) + len(msg.StickerItems)
+	if msg.Content != "" {
+		predictedLength++
+	}
+	parts := make([]*ConvertedMessage, 0, predictedLength)
+	if textPart := portal.convertDiscordTextPartialMessage(ctx, intent, msg, id); textPart != nil {
+		parts = append(parts, textPart)
+	}
+	log := zerolog.Ctx(ctx)
+	handledIDs := make(map[string]struct{})
+	for _, att := range msg.Attachments {
+		if _, handled := handledIDs[att.ID]; handled {
+			continue
+		}
+		handledIDs[att.ID] = struct{}{}
+		log := log.With().Str("attachment_id", att.ID).Logger()
+		if part := portal.convertDiscordAttachment(log.WithContext(ctx), intent, id, att); part != nil {
+			parts = append(parts, part)
+		}
+	}
+	for _, sticker := range msg.StickerItems {
+		if _, handled := handledIDs[sticker.ID]; handled {
+			continue
+		}
+		handledIDs[sticker.ID] = struct{}{}
+		log := log.With().Str("sticker_id", sticker.ID).Logger()
+		if part := portal.convertDiscordSticker(log.WithContext(ctx), intent, sticker); part != nil {
+			parts = append(parts, part)
+		}
+	}
+	for i, embed := range msg.Embeds {
+		// Ignore non-video embeds, they're handled in convertDiscordTextMessage
+		if getEmbedType(msg.Embeds, msg.Content, embed) != EmbedVideo {
+			continue
+		}
+		// Discord deduplicates embeds by URL. It makes things easier for us too.
+		if _, handled := handledIDs[embed.URL]; handled {
+			continue
+		}
+		handledIDs[embed.URL] = struct{}{}
+		log := log.With().
+			Str("computed_embed_type", "video").
+			Str("embed_type", string(embed.Type)).
+			Int("embed_index", i).
+			Logger()
+		part := portal.convertDiscordVideoEmbed(log.WithContext(ctx), intent, embed)
+		if part != nil {
+			parts = append(parts, part)
+		}
+	}
+	return parts
+}
+
+const msgForwardTemplateHTML = `<blockquote>Forwarded%s (<a href="%s/%s/%s">message</a>)</blockquote>`
+
 func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, puppet *Puppet, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
 	log := zerolog.Ctx(ctx)
 	if msg.MessageReference != nil && msg.MessageReference.Type == discordgo.MessageReferenceTypeForward {
 		ref := msg.MessageReference
-		message, err := puppet.customUser.Session.ChannelMessage(ref.ChannelID, ref.MessageID)
-		if err != nil {
-			log.Err(err)
+		log.Debug().Msg("Message reference is Forward")
+		if len(msg.MessageSnapshots) == 0 {
+			log.Error().Msg("Forwarded message snapshot is empty")
 			return []*ConvertedMessage{}
 		}
-		return portal.convertDiscordMessage(ctx, puppet, intent, message)
+		snapshot := msg.MessageSnapshots[0]
+		if snapshot == nil {
+			log.Error().Msg("Could not find forwarded message")
+			return []*ConvertedMessage{}
+		}
+		message := snapshot.Message
+		log.Debug().Msg(fmt.Sprintf("Forward message content: %s", message.Content))
+		parts := portal.convertDiscordPartialMessage(ctx, puppet, intent, message, ref.MessageID)
+		user := portal.bridge.usersByMXID[intent.UserID]
+		guildName := ""
+		if user != nil {
+			guild, err := user.Session.Guild(ref.GuildID)
+			if err != nil {
+				log.Err(err).Msg("Could not get forward message guild")
+			} else {
+				guildName = fmt.Sprintf(" from %s", guild.Name)
+				log.Debug().Msg(fmt.Sprintf("Forward message guild name: %s", guild.Name))
+			}
+		}
+		html := fmt.Sprintf(msgForwardTemplateHTML, guildName, discordgo.EndpointChannel(ref.GuildID), ref.ChannelID, ref.MessageID)
+		content := format.HTMLToContent(html)
+		return append([]*ConvertedMessage{{
+			Type:    event.EventMessage,
+			Content: &content,
+		}}, parts...)
 	}
 	return []*ConvertedMessage{}
 }
@@ -616,7 +696,7 @@ func isActuallyLinkPreview(embed *discordgo.MessageEmbed) bool {
 	return embed.Video != nil && embed.Video.ProxyURL == ""
 }
 
-func getEmbedType(msg *discordgo.Message, embed *discordgo.MessageEmbed) BridgeEmbedType {
+func getEmbedType(embeds []*discordgo.MessageEmbed, content string, embed *discordgo.MessageEmbed) BridgeEmbedType {
 	switch embed.Type {
 	case discordgo.EmbedTypeLink, discordgo.EmbedTypeArticle:
 		return EmbedLinkPreview
@@ -628,7 +708,7 @@ func getEmbedType(msg *discordgo.Message, embed *discordgo.MessageEmbed) BridgeE
 	case discordgo.EmbedTypeGifv:
 		return EmbedVideo
 	case discordgo.EmbedTypeImage:
-		if msg != nil && isPlainGifMessage(msg) {
+		if embeds != nil && isPlainGifMessage(embeds, content) {
 			return EmbedVideo
 		} else if embed.Image == nil && embed.Thumbnail != nil {
 			return EmbedLinkPreview
@@ -641,14 +721,14 @@ func getEmbedType(msg *discordgo.Message, embed *discordgo.MessageEmbed) BridgeE
 	}
 }
 
-func isPlainGifMessage(msg *discordgo.Message) bool {
-	if len(msg.Embeds) != 1 {
+func isPlainGifMessage(embeds []*discordgo.MessageEmbed, content string) bool {
+	if embeds == nil || len(embeds) != 1 {
 		return false
 	}
-	embed := msg.Embeds[0]
+	embed := embeds[0]
 	isGifVideo := embed.Type == discordgo.EmbedTypeGifv && embed.Video != nil
 	isGifImage := embed.Type == discordgo.EmbedTypeImage && embed.Image == nil && embed.Thumbnail != nil
-	contentIsOnlyURL := msg.Content == embed.URL || discordLinkRegexFull.MatchString(msg.Content)
+	contentIsOnlyURL := content == embed.URL || discordLinkRegexFull.MatchString(content)
 	return contentIsOnlyURL && (isGifVideo || isGifImage)
 }
 
@@ -693,7 +773,7 @@ func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *app
 		puppet.UpdateInfo(nil, msg.Interaction.User, nil)
 		htmlParts = append(htmlParts, fmt.Sprintf(msgInteractionTemplateHTML, puppet.MXID, puppet.Name, msg.Interaction.Name))
 	}
-	if msg.Content != "" && !isPlainGifMessage(msg) {
+	if msg.Content != "" && !isPlainGifMessage(msg.Embeds, msg.Content) {
 		htmlParts = append(htmlParts, portal.renderDiscordMarkdownOnlyHTML(msg.Content, true))
 	}
 	previews := make([]*BeeperLinkPreview, 0)
@@ -704,7 +784,7 @@ func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *app
 		with := log.With().
 			Str("embed_type", string(embed.Type)).
 			Int("embed_index", i)
-		switch getEmbedType(msg, embed) {
+		switch getEmbedType(msg.Embeds, msg.Content, embed) {
 		case EmbedRich:
 			log := with.Str("computed_embed_type", "rich").Logger()
 			htmlParts = append(htmlParts, portal.convertDiscordRichEmbed(log.WithContext(ctx), intent, embed, msg.ID, i))
@@ -741,6 +821,64 @@ func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *app
 		content.EnsureHasHTML()
 		content.Body = fmt.Sprintf("%s: %s", msg.Author.Username, content.Body)
 		content.FormattedBody = fmt.Sprintf("<strong>%s</strong>: %s", html.EscapeString(msg.Author.Username), content.FormattedBody)
+	}
+
+	return &ConvertedMessage{Type: event.EventMessage, Content: &content, Extra: extraContent}
+}
+
+func (portal *Portal) convertDiscordTextPartialMessage(ctx context.Context, intent *appservice.IntentAPI, msg *discordgo.PartialMessage, id string) *ConvertedMessage {
+	log := zerolog.Ctx(ctx)
+	if msg.Type == discordgo.MessageTypeCall {
+		return &ConvertedMessage{Type: event.EventMessage, Content: &event.MessageEventContent{
+			MsgType: event.MsgEmote,
+			Body:    "started a call",
+		}}
+	} else if msg.Type == discordgo.MessageTypeGuildMemberJoin {
+		return &ConvertedMessage{Type: event.EventMessage, Content: &event.MessageEventContent{
+			MsgType: event.MsgEmote,
+			Body:    "joined the server",
+		}}
+	}
+	var htmlParts []string
+	if msg.Content != "" && !isPlainGifMessage(msg.Embeds, msg.Content) {
+		htmlParts = append(htmlParts, portal.renderDiscordMarkdownOnlyHTML(msg.Content, true))
+	}
+	previews := make([]*BeeperLinkPreview, 0)
+	for i, embed := range msg.Embeds {
+		if i == 0 && isReplyEmbed(embed) {
+			continue
+		}
+		with := log.With().
+			Str("embed_type", string(embed.Type)).
+			Int("embed_index", i)
+		switch getEmbedType(msg.Embeds, msg.Content, embed) {
+		case EmbedRich:
+			log := with.Str("computed_embed_type", "rich").Logger()
+			htmlParts = append(htmlParts, portal.convertDiscordRichEmbed(log.WithContext(ctx), intent, embed, id, i))
+		case EmbedLinkPreview:
+			log := with.Str("computed_embed_type", "link preview").Logger()
+			previews = append(previews, portal.convertDiscordLinkEmbedToBeeper(log.WithContext(ctx), intent, embed))
+		case EmbedVideo:
+			// Ignore video embeds, they're handled as separate messages
+		default:
+			log := with.Logger()
+			log.Warn().Msg("Unknown embed type in message")
+		}
+	}
+
+	if len(msg.Components) > 0 {
+		htmlParts = append(htmlParts, msgComponentTemplateHTML)
+	}
+
+	if len(htmlParts) == 0 {
+		return nil
+	}
+
+	fullHTML := strings.Join(htmlParts, "\n")
+
+	content := format.HTMLToContent(fullHTML)
+	extraContent := map[string]any{
+		"com.beeper.linkpreviews": previews,
 	}
 
 	return &ConvertedMessage{Type: event.EventMessage, Content: &content, Extra: extraContent}

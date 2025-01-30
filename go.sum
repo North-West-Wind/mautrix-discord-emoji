@@ -2,6 +2,12 @@ github.com/DATA-DOG/go-sqlmock v1.5.0 h1:Shsta01QNfFxHCfpW6YH2STWB0MudeXXEWMr20O
 github.com/DATA-DOG/go-sqlmock v1.5.0/go.mod h1:f/Ixk793poVmq4qj/V1dPUg2JEAKC73Q5eFN3EC/SaM=
 github.com/North-West-Wind/discordgo-forward v0.0.0-20250129103359-b3491699b1c2 h1:aSSwH/SggsXBW6UDHeT0NnU0pLGqK9JD6F7Y3fCKY3Y=
 github.com/North-West-Wind/discordgo-forward v0.0.0-20250129103359-b3491699b1c2/go.mod h1:59+AOzzjmL6onAh62nuLXmn7dJCaC/owDLWbGtjTcFA=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130052115-fa87951f2a30 h1:XaXmz4wjK3+5N0zkOG5xcbLXZHOwKyWf4ApFaxyf2S8=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130052115-fa87951f2a30/go.mod h1:59+AOzzjmL6onAh62nuLXmn7dJCaC/owDLWbGtjTcFA=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130052459-afa0c899899d h1:cD9CamwHp92OLp5kIqmdI5C9tBXVE8EQQ2AodoTr33o=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130052459-afa0c899899d/go.mod h1:59+AOzzjmL6onAh62nuLXmn7dJCaC/owDLWbGtjTcFA=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130053711-1566ec9e9804 h1:Y3TgvC0RB4IfFQ7r7wuYPL3B+atOOQUGaECeVV2reH4=
+github.com/North-West-Wind/discordgo-forward v0.0.0-20250130053711-1566ec9e9804/go.mod h1:59+AOzzjmL6onAh62nuLXmn7dJCaC/owDLWbGtjTcFA=
 github.com/beeper/discordgo v0.0.0-20241129182205-d6dffc9bf133 h1:vTaMCjc0g0Cexadep0CaDxoJb0S37ZcUl5zTlDJ2adQ=
 github.com/beeper/discordgo v0.0.0-20241129182205-d6dffc9bf133/go.mod h1:59+AOzzjmL6onAh62nuLXmn7dJCaC/owDLWbGtjTcFA=
 github.com/coreos/go-systemd/v22 v22.5.0 h1:RrqgGjYQKalulkV8NGVIfkXQf6YYmOyiJKk8iXXhfZs=
