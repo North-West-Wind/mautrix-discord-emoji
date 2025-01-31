@@ -654,6 +654,24 @@ func (portal *Portal) handleDiscordMessageCreate(user *User, msg *discordgo.Mess
 	parts := portal.convertDiscordMessage(ctx, puppet, intent, msg)
 	dbParts := make([]database.MessagePart, 0, len(parts))
 	eventIDs := zerolog.Dict()
+
+	forwardParts := portal.convertDiscordForwardedMessage(ctx, intent, msg)
+	if replyTo != nil && replyTo.EventID.String() == "" && len(forwardParts) > 0 {
+		for i, part := range forwardParts {
+			resp, err := portal.sendMatrixMessage(intent, part.Type, part.Content, part.Extra, ts.UnixMilli())
+			if err != nil {
+				log.Err(err).
+					Int("part_index", i).
+					Str("attachment_id", part.AttachmentID).
+					Msg("Failed to send part of message to Matrix")
+				continue
+			}
+			if i == 0 {
+				replyTo = &event.InReplyTo{EventID: resp.EventID}
+			}
+		}
+	}
+
 	for i, part := range parts {
 		if (replyTo != nil || threadRootEvent != "") && part.Content.RelatesTo == nil {
 			part.Content.RelatesTo = &event.RelatesTo{}
@@ -720,6 +738,10 @@ func (portal *Portal) getReplyTarget(source *User, threadID string, ref *discord
 	}
 	if ref == nil {
 		return nil
+	}
+	if ref.Type == discordgo.MessageReferenceTypeForward {
+		// way to say this is a forward message without changing too many things
+		return &event.InReplyTo{}
 	}
 	// TODO add config option for cross-room replies
 	crossRoomReplies := portal.bridge.Config.Homeserver.Software == bridgeconfig.SoftwareHungry
@@ -879,7 +901,7 @@ func (portal *Portal) handleDiscordMessageUpdate(user *User, msg *discordgo.Mess
 	}
 	for _, remainingEmbed := range msg.Embeds {
 		// Other types of embeds are sent inline with the text message part
-		if getEmbedType(nil, remainingEmbed) != EmbedVideo {
+		if getEmbedType(nil, "", remainingEmbed) != EmbedVideo {
 			continue
 		}
 		embedID := "video_" + remainingEmbed.URL
@@ -902,7 +924,7 @@ func (portal *Portal) handleDiscordMessageUpdate(user *User, msg *discordgo.Mess
 	var converted *ConvertedMessage
 	// Slightly hacky special case: messages with gif links will get an embed with the gif.
 	// The link isn't rendered on Discord, so just edit the link message into a gif message on Matrix too.
-	if isPlainGifMessage(msg) {
+	if isPlainGifMessage(msg.Embeds, msg.Content) {
 		converted = portal.convertDiscordVideoEmbed(ctx, intent, msg.Embeds[0])
 	} else {
 		converted = portal.convertDiscordTextMessage(ctx, intent, msg)
