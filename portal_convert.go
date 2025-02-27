@@ -411,6 +411,7 @@ func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent
 				}
 				part.Content.Body = strings.Join(results, "\n")
 			} else {
+				originalType := part.Content.MsgType
 				split := strings.Split(part.Content.Body, "\n")
 				results := make([]string, len(split))
 				for _, s := range split {
@@ -418,6 +419,7 @@ func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent
 				}
 				content := format.HTMLToContent(portal.renderDiscordMarkdownOnlyHTML(strings.Join(results, "\n"), false))
 				part.Content = &content
+				part.Content.MsgType = originalType
 			}
 		}
 		user := portal.bridge.usersByMXID[intent.UserID]
