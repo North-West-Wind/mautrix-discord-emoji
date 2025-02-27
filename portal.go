@@ -1584,6 +1584,17 @@ func (portal *Portal) handleMatrixMessage(sender *User, evt *event.Event) {
 	var description string
 	if evt.Type == event.EventSticker {
 		content.MsgType = event.MsgImage
+		if content.Info.MimeType == "" {
+			portal.log.Debug().Msg("m.sticker event has no mimetype. Attempting to get from media...")
+			data, err := downloadMatrixAttachment(portal.MainIntent(), content)
+			if err != nil {
+				go portal.sendMessageMetrics(evt, err, "Error downloading media in")
+			} else {
+				mimeData := mimetype.Detect(data)
+				content.Info.MimeType = mimeData.String()
+				content.Info.Size = len(data)
+			}
+		}
 		if mimeData := mimetype.Lookup(content.Info.MimeType); mimeData != nil {
 			description = content.Body
 			content.Body = "sticker" + mimeData.Extension()
