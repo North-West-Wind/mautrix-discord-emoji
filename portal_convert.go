@@ -386,6 +386,7 @@ func (portal *Portal) convertDiscordPartialMessage(ctx context.Context, intent *
 }
 
 const msgForwardTemplateHTML = `<blockquote>Forwarded%s (<a href="%s/%s/%s">message</a>)</blockquote>`
+const msgForwardEndHTML = `<blockquote>End of forwarded message</blockquote>`
 
 func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent *appservice.IntentAPI, msg *discordgo.Message) []*ConvertedMessage {
 	log := zerolog.Ctx(ctx)
@@ -401,27 +402,6 @@ func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent
 		}
 		message := snapshot.Message
 		parts := portal.convertDiscordPartialMessage(ctx, intent, message, ref.MessageID)
-		for _, part := range parts {
-			if part.Content.Format == event.FormatHTML {
-				part.Content.FormattedBody = fmt.Sprintf(`<blockquote>%s</blockquote>`, part.Content.FormattedBody)
-				split := strings.Split(part.Content.Body, "\n")
-				results := make([]string, len(split))
-				for _, s := range split {
-					results = append(results, "> "+s)
-				}
-				part.Content.Body = strings.Join(results, "\n")
-			} else {
-				originalType := part.Content.MsgType
-				split := strings.Split(part.Content.Body, "\n")
-				results := make([]string, len(split))
-				for _, s := range split {
-					results = append(results, "> "+s)
-				}
-				content := format.HTMLToContent(portal.renderDiscordMarkdownOnlyHTML(strings.Join(results, "\n"), false))
-				part.Content = &content
-				part.Content.MsgType = originalType
-			}
-		}
 		user := portal.bridge.usersByMXID[intent.UserID]
 		guildName := ""
 		if user != nil {
@@ -434,6 +414,11 @@ func (portal *Portal) convertDiscordForwardedMessage(ctx context.Context, intent
 		}
 		html := fmt.Sprintf(msgForwardTemplateHTML, guildName, discordgo.EndpointDiscord+"channels/"+ref.GuildID, ref.ChannelID, ref.MessageID)
 		content := format.HTMLToContent(html)
+		endContent := format.HTMLToContent(msgForwardEndHTML)
+		parts = append(parts, &ConvertedMessage{
+			Type:    event.EventMessage,
+			Content: &endContent,
+		})
 		return append([]*ConvertedMessage{{
 			Type:    event.EventMessage,
 			Content: &content,
