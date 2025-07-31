@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"maunium.net/go/mautrix/bridge"
 	"maunium.net/go/mautrix/bridge/commands"
+	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
 	"go.mau.fi/mautrix-discord/config"
@@ -95,6 +96,7 @@ func (br *DiscordBridge) GetConfigPtr() interface{} {
 func (br *DiscordBridge) Init() {
 	br.CommandProcessor = commands.NewProcessor(&br.Bridge)
 	br.RegisterCommands()
+	br.EventProcessor.On(event.StateTombstone, br.HandleTombstone)
 
 	matrixHTMLParser.PillConverter = br.pillConverter
 
@@ -185,7 +187,7 @@ func main() {
 		Name:              "mautrix-discord",
 		URL:               "https://github.com/mautrix/discord",
 		Description:       "A Matrix-Discord puppeting bridge.",
-		Version:           "0.7.2",
+		Version:           "0.7.5",
 		ProtocolName:      "Discord",
 		BeeperServiceName: "discordgo",
 		BeeperNetworkName: "discord",

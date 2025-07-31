@@ -340,8 +340,7 @@ func (user *User) getSpaceRoom(ptr *id.RoomID, name, topic string, parent id.Roo
 		},
 		PowerLevelOverride: &event.PowerLevelsEventContent{
 			Users: map[id.UserID]int{
-				user.bridge.Bot.UserID: 9001,
-				user.MXID:              50,
+				user.MXID: 50,
 			},
 		},
 	})
@@ -1165,7 +1164,7 @@ func (user *User) channelUpdateHandler(c *discordgo.ChannelUpdate) {
 	portal := user.GetPortalByMeta(c.Channel)
 	if c.GuildID == "" {
 		user.handlePrivateChannel(portal, c.Channel, time.Now(), true, user.IsInSpace(portal.Key.String()))
-	} else {
+	} else if user.channelIsBridgeable(c.Channel) {
 		portal.UpdateInfo(user, c.Channel)
 	}
 }

@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"strconv"
@@ -32,6 +34,8 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
 	"maunium.net/go/mautrix/id"
+
+	"go.mau.fi/mautrix-discord/database"
 )
 
 type ConvertedMessage struct {
@@ -152,24 +156,27 @@ func (portal *Portal) convertDiscordAttachment(ctx context.Context, intent *apps
 			Size: att.Size,
 		},
 	}
+
+	var extra = make(map[string]any)
+
+	if strings.HasPrefix(att.Filename, "SPOILER_") {
+		extra["page.codeberg.everypizza.msc4193.spoiler"] = true
+	}
+
 	if att.Description != "" {
 		content.Body = att.Description
 		content.FileName = att.Filename
 	}
-
-	var extra map[string]any
 
 	switch strings.ToLower(strings.Split(att.ContentType, "/")[0]) {
 	case "audio":
 		content.MsgType = event.MsgAudio
 		if att.Waveform != nil {
 			// TODO convert waveform
-			extra = map[string]any{
-				"org.matrix.1767.audio": map[string]any{
-					"duration": int(att.DurationSeconds * 1000),
-				},
-				"org.matrix.msc3245.voice": map[string]any{},
+			extra["org.matrix.msc1767.audio"] = map[string]any{
+				"duration": int(att.DurationSeconds * 1000),
 			}
+			extra["org.matrix.msc3245.voice"] = map[string]any{}
 		}
 	case "image":
 		content.MsgType = event.MsgImage
@@ -357,8 +364,7 @@ func (puppet *Puppet) addMemberMeta(part *ConvertedMessage, msg *discordgo.Messa
 	}
 	if msg.Member.Nick != "" || !avatarURL.IsEmpty() {
 		perMessageProfile := map[string]any{
-			"is_multiple_users": false,
-
+			"id":          fmt.Sprintf("%s_%s", msg.GuildID, msg.Author.ID),
 			"displayname": msg.Member.Nick,
 			"avatar_url":  avatarURL.String(),
 		}
@@ -396,11 +402,21 @@ func (puppet *Puppet) addWebhookMeta(part *ConvertedMessage, msg *discordgo.Mess
 		"avatar_url": msg.Author.AvatarURL(""),
 		"avatar_mxc": avatarURL.String(),
 	}
+	profileID := sha256.Sum256(fmt.Appendf(nil, "%s:%s", msg.Author.Username, msg.Author.Avatar))
+	hasFallback := false
+	if msg.ApplicationID == "" &&
+		puppet.bridge.Config.Bridge.PrefixWebhookMessages &&
+		(part.Content.MsgType == event.MsgText || part.Content.MsgType == event.MsgNotice || (part.Content.FileName != "" && part.Content.FileName != part.Content.Body)) {
+		part.Content.EnsureHasHTML()
+		part.Content.Body = fmt.Sprintf("%s: %s", msg.Author.Username, part.Content.Body)
+		part.Content.FormattedBody = fmt.Sprintf("<strong data-mx-profile-fallback>%s: </strong>%s", html.EscapeString(msg.Author.Username), part.Content.FormattedBody)
+		hasFallback = true
+	}
 	part.Extra["com.beeper.per_message_profile"] = map[string]any{
-		"is_multiple_users": true,
-
-		"avatar_url":  avatarURL.String(),
-		"displayname": msg.Author.Username,
+		"id":           hex.EncodeToString(profileID[:]),
+		"avatar_url":   avatarURL.String(),
+		"displayname":  msg.Author.Username,
+		"has_fallback": hasFallback,
 	}
 }
 
@@ -633,7 +649,7 @@ func isPlainGifMessage(msg *discordgo.Message) bool {
 	}
 	embed := msg.Embeds[0]
 	isGifVideo := embed.Type == discordgo.EmbedTypeGifv && embed.Video != nil
-	isGifImage := embed.Type == discordgo.EmbedTypeImage && embed.Image == nil && embed.Thumbnail != nil
+	isGifImage := embed.Type == discordgo.EmbedTypeImage && embed.Image == nil && embed.Thumbnail != nil && embed.Title == ""
 	contentIsOnlyURL := msg.Content == embed.URL || discordLinkRegexFull.MatchString(msg.Content)
 	return contentIsOnlyURL && (isGifVideo || isGifImage)
 }
@@ -660,6 +676,12 @@ func (portal *Portal) convertDiscordMentions(msg *discordgo.Message, syncGhosts 
 	return &matrixMentions
 }
 
+const forwardTemplateHTML = `<blockquote>
+<p>↷ Forwarded</p>
+%s
+<p>%s</p>
+</blockquote>`
+
 func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *appservice.IntentAPI, msg *discordgo.Message) *ConvertedMessage {
 	log := zerolog.Ctx(ctx)
 	if msg.Type == discordgo.MessageTypeCall {
@@ -681,6 +703,36 @@ func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *app
 	}
 	if msg.Content != "" && !isPlainGifMessage(msg) {
 		htmlParts = append(htmlParts, portal.renderDiscordMarkdownOnlyHTML(msg.Content, true))
+	} else if msg.MessageReference != nil &&
+		msg.MessageReference.Type == discordgo.MessageReferenceTypeForward &&
+		len(msg.MessageSnapshots) > 0 &&
+		msg.MessageSnapshots[0].Message != nil {
+		forwardedHTML := portal.renderDiscordMarkdownOnlyHTMLNoUnwrap(msg.MessageSnapshots[0].Message.Content, true)
+		msgTSText := msg.MessageSnapshots[0].Message.Timestamp.Format("2006-01-02 15:04 MST")
+		origLink := fmt.Sprintf("unknown channel • %s", msgTSText)
+		forwardedFromPortal := portal.bridge.GetExistingPortalByID(database.NewPortalKey(msg.MessageReference.ChannelID, ""))
+		if forwardedFromPortal != nil {
+			origMessage := portal.bridge.DB.Message.GetFirstByDiscordID(forwardedFromPortal.Key, msg.MessageReference.MessageID)
+			if origMessage != nil {
+				origLink = fmt.Sprintf(
+					`<a href="%s">#%s • %s</a>`,
+					forwardedFromPortal.MXID.EventURI(origMessage.MXID, portal.bridge.AS.HomeserverDomain),
+					forwardedFromPortal.PlainName,
+					msgTSText,
+				)
+			} else if forwardedFromPortal.MXID != "" {
+				origLink = fmt.Sprintf(
+					`<a href="%s">#%s</a> • %s`,
+					forwardedFromPortal.MXID.URI(portal.bridge.AS.HomeserverDomain),
+					forwardedFromPortal.PlainName,
+					msgTSText,
+				)
+			} else if forwardedFromPortal.PlainName != "" {
+				origLink = fmt.Sprintf("%s • %s", forwardedFromPortal.PlainName, msgTSText)
+			}
+		}
+
+		htmlParts = append(htmlParts, fmt.Sprintf(forwardTemplateHTML, forwardedHTML, origLink))
 	}
 	previews := make([]*BeeperLinkPreview, 0)
 	for i, embed := range msg.Embeds {
@@ -721,12 +773,6 @@ func (portal *Portal) convertDiscordTextMessage(ctx context.Context, intent *app
 	content := format.HTMLToContent(fullHTML)
 	extraContent := map[string]any{
 		"com.beeper.linkpreviews": previews,
-	}
-
-	if msg.WebhookID != "" && msg.ApplicationID == "" && portal.bridge.Config.Bridge.PrefixWebhookMessages {
-		content.EnsureHasHTML()
-		content.Body = fmt.Sprintf("%s: %s", msg.Author.Username, content.Body)
-		content.FormattedBody = fmt.Sprintf("<strong>%s</strong>: %s", html.EscapeString(msg.Author.Username), content.FormattedBody)
 	}
 
 	return &ConvertedMessage{Type: event.EventMessage, Content: &content, Extra: extraContent}
