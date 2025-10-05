@@ -223,7 +223,7 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 		}
 		return fmt.Sprintf("||%s||", text)
 	},
-	LinkConverter: func(text, href string, ctx format.Context) string {
+	LinkConverter: func(text, href string, ctx ext_format.Context) string {
 		linkPreviews := ctx.ReturnData[formatterContextInputAllowedLinkPreviewsKey].([]string)
 		allowPreview := linkPreviews == nil || slices.Contains(linkPreviews, href)
 		if text == href {
@@ -331,7 +331,7 @@ func (portal *Portal) parseMatrixHTML(content *event.MessageEventContent, allowe
 		RepliedUser: true,
 	}
 	if content.Format == event.FormatHTML && len(content.FormattedBody) > 0 {
-		ctx := format.NewContext()
+		ctx := ext_format.NewContext()
 		ctx.ReturnData[formatterContextInputAllowedLinkPreviewsKey] = allowedLinkPreviews
 		ctx.ReturnData[formatterContextPortalKey] = portal
 		ctx.ReturnData[formatterContextAllowedMentionsKey] = allowedMentions
