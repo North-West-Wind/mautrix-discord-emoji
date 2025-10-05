@@ -490,6 +490,7 @@ func (portal *Portal) CreateMatrixRoom(user *User, channel *discordgo.Channel) e
 		IsDirect:        portal.IsPrivateChat(),
 		InitialState:    initialState,
 		CreationContent: creationContent,
+		RoomVersion:     "11",
 	}
 	if !portal.shouldSetDMRoomMetadata() && !portal.FriendNick {
 		req.Name = ""
@@ -1552,7 +1553,8 @@ func (portal *Portal) handleMatrixMessage(sender *User, evt *event.Event) {
 	if editMXID := content.GetRelatesTo().GetReplaceID(); editMXID != "" && content.NewContent != nil {
 		edits := portal.bridge.DB.Message.GetByMXID(portal.Key, editMXID)
 		if edits != nil {
-			discordContent, allowedMentions := portal.parseMatrixHTML(content.NewContent)
+			newContentRaw, _ := evt.Content.Raw["m.new_content"].(map[string]any)
+			discordContent, allowedMentions := portal.parseMatrixHTML(content.NewContent, parseAllowedLinkPreviews(newContentRaw))
 			var err error
 			var msg *discordgo.Message
 			if !isWebhookSend {
@@ -1631,7 +1633,7 @@ func (portal *Portal) handleMatrixMessage(sender *User, evt *event.Event) {
 	}
 	switch content.MsgType {
 	case event.MsgText, event.MsgEmote, event.MsgNotice:
-		sendReq.Content, sendReq.AllowedMentions = portal.parseMatrixHTML(content)
+		sendReq.Content, sendReq.AllowedMentions = portal.parseMatrixHTML(content, parseAllowedLinkPreviews(evt.Content.Raw))
 		if content.MsgType == event.MsgEmote {
 			sendReq.Content = fmt.Sprintf("_%s_", sendReq.Content)
 		}
@@ -1644,7 +1646,7 @@ func (portal *Portal) handleMatrixMessage(sender *User, evt *event.Event) {
 		filename := content.Body
 		if content.FileName != "" && content.FileName != content.Body {
 			filename = content.FileName
-			sendReq.Content, sendReq.AllowedMentions = portal.parseMatrixHTML(content)
+			sendReq.Content, sendReq.AllowedMentions = portal.parseMatrixHTML(content, parseAllowedLinkPreviews(evt.Content.Raw))
 		}
 
 		if evt.Content.Raw["page.codeberg.everypizza.msc4193.spoiler"] == true {
@@ -1750,6 +1752,28 @@ func (portal *Portal) handleMatrixMessage(sender *User, evt *event.Event) {
 		dbMsg.ThreadID = threadID
 		dbMsg.Insert()
 	}
+}
+
+func parseAllowedLinkPreviews(raw map[string]any) []string {
+	if raw == nil {
+		return nil
+	}
+	linkPreviews, ok := raw["com.beeper.linkpreviews"].([]any)
+	if !ok {
+		return nil
+	}
+	allowedLinkPreviews := make([]string, 0, len(linkPreviews))
+	for _, preview := range linkPreviews {
+		previewMap, ok := preview.(map[string]any)
+		if !ok {
+			continue
+		}
+		matchedURL, _ := previewMap["matched_url"].(string)
+		if matchedURL != "" {
+			allowedLinkPreviews = append(allowedLinkPreviews, matchedURL)
+		}
+	}
+	return allowedLinkPreviews
 }
 
 func (portal *Portal) sendDeliveryReceipt(eventID id.EventID) {
