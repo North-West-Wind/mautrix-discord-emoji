@@ -10,7 +10,9 @@ CREATE TABLE guild (
     avatar_url TEXT NOT NULL,
     avatar_set BOOLEAN NOT NULL,
 
-    bridging_mode INTEGER NOT NULL
+    bridging_mode INTEGER NOT NULL,
+
+		no_emoji BOOLEAN
 );
 
 CREATE TABLE portal (

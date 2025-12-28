@@ -177,7 +177,9 @@ func (guild *Guild) CreateMatrixRoom(user *User, meta *discordgo.Guild) error {
 	}
 	guild.log.Infoln("Creating Matrix room for guild")
 	guild.UpdateInfo(user, meta)
-	guild.UpdateEmojis(meta.Emojis)
+	if !guild.NoEmoji {
+		guild.UpdateEmojis(meta.Emojis)
+	}
 
 	bridgeInfoStateKey, bridgeInfo := guild.getBridgeInfo()
 

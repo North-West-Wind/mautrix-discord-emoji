@@ -1020,7 +1020,9 @@ func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSp
 
 func (user *User) handleGuildEmoji(guildID string, emojis []*discordgo.Emoji) {
 	guild := user.bridge.GetGuildByID(guildID, true)
-	guild.UpdateEmojis(emojis)
+	if !guild.NoEmoji {
+		guild.UpdateEmojis(emojis)
+	}
 }
 
 func (user *User) connectedHandler(_ *discordgo.Connect) {
@@ -1534,6 +1536,18 @@ func (user *User) bridgeGuild(guildID string, everything bool) error {
 	return nil
 }
 
+func (user *User) bridgeGuildEmojis(guildID string) error {
+	guild := user.bridge.GetGuildByID(guildID, false)
+	if guild == nil {
+		return errors.New("guild not found")
+	}
+	guild.NoEmoji = false
+	meta, _ := user.Session.State.Guild(guildID)
+	guild.UpdateEmojis(meta.Emojis)
+	guild.Update()
+	return nil
+}
+
 func (user *User) unbridgeGuild(guildID string) error {
 	if user.PermissionLevel < bridgeconfig.PermissionLevelAdmin && user.PortalHasOtherUsers(guildID) {
 		return errors.New("only bridge admins can unbridge guilds with other users")
@@ -1555,5 +1569,16 @@ func (user *User) unbridgeGuild(guildID string) error {
 	}
 	guild.cleanup()
 	guild.RemoveMXID()
+	return nil
+}
+
+func (user *User) unbridgeGuildEmojis(guildID string) error {
+	guild := user.bridge.GetGuildByID(guildID, false)
+	if guild == nil {
+		return errors.New("guild not found")
+	}
+	guild.NoEmoji = true
+	guild.UpdateEmojis([]*discordgo.Emoji{})
+	guild.Update()
 	return nil
 }
