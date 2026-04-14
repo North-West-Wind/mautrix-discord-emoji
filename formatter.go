@@ -26,7 +26,6 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/util"
-	"go.mau.fi/mautrix-discord/database"
 	"go.mau.fi/mautrix-discord/ext_format"
 	"go.mau.fi/util/variationselector"
 	"golang.org/x/exp/slices"
@@ -248,48 +247,28 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 		// 2. other guilds db
 		// 3. current guild discord
 		// 4. other guilds discord
-		var guildEmoji *database.GuildEmoji
+
+		// Layer 1: find in current guild DB
 		for name, emoji := range portal.Guild.emojis {
 			split := strings.Split(name, ":")
 			emojiName := strings.Join(split[:len(split)-1], ":")
 			if alt == emojiName || src == emoji.MXC {
-				portal.log.Debug().Msg("Found emoji in layer 1")
-				guildEmoji = emoji
-				break
+				portal.log.Debug().Msg("Found emoji in layer 1 (guild db)")
+				var template string
+				if emoji.Animated {
+					template = "<a:%s>"
+				} else {
+					template = "<:%s>"
+				}
+				return fmt.Sprintf(template, emoji.EmojiName)
 			}
 		}
-		if guildEmoji == nil {
-			// Find in other guilds
-			for id, guild := range portal.bridge.guildsByID {
-				if id == portal.GuildID {
-					// Skip searched guild
-					continue
-				}
-				for name, emoji := range guild.emojis {
-					split := strings.Split(name, ":")
-					emojiName := strings.Join(split[:len(split)-1], ":")
-					if alt == emojiName || src == emoji.MXC {
-						portal.log.Debug().Msg("Found emoji in layer 2")
-						guildEmoji = emoji
-						break
-					}
-				}
-			}
-		}
-		if guildEmoji != nil {
-			var template string
-			if guildEmoji.Animated {
-				template = "<a:%s>"
-			} else {
-				template = "<:%s>"
-			}
-			return fmt.Sprintf(template, guildEmoji.EmojiName)
-		} else if alt != "" {
-			// Fallback to guild fetching
-			// Prioritize current guild
+
+		// Layer 2: find in current guild Discord
+		if alt != "" {
 			for _, emoji := range portal.Guild.discordEmojis {
 				if emoji.Name == alt {
-					portal.log.Debug().Msg("Found emoji in layer 3")
+					portal.log.Debug().Msg("Found emoji in layer 2 (guild discord)")
 					var template string
 					if emoji.Animated {
 						template = "<a:%s:%s>"
@@ -299,28 +278,52 @@ var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 					return fmt.Sprintf(template, emoji.Name, emoji.ID)
 				}
 			}
-			// Find in other guilds
-			for id, guild := range portal.bridge.guildsByID {
-				if id == portal.GuildID {
-					// Skip searched guild
-					continue
-				}
-				for _, emoji := range guild.discordEmojis {
-					if emoji.Name == alt {
-						portal.log.Debug().Msg("Found emoji in layer 4")
-						var template string
-						if emoji.Animated {
-							template = "<a:%s:%s>"
-						} else {
-							template = "<:%s:%s>"
-						}
-						return fmt.Sprintf(template, emoji.Name, emoji.ID)
+		}
+
+		// Layer 3: find in other guild DB
+		for id, guild := range portal.bridge.guildsByID {
+			if id == portal.GuildID {
+				// Skip searched guild
+				continue
+			}
+			for name, emoji := range guild.emojis {
+				split := strings.Split(name, ":")
+				emojiName := strings.Join(split[:len(split)-1], ":")
+				if alt == emojiName || src == emoji.MXC {
+					portal.log.Debug().Msg("Found emoji in layer 3 (other db)")
+					var template string
+					if emoji.Animated {
+						template = "<a:%s>"
+					} else {
+						template = "<:%s>"
 					}
+					return fmt.Sprintf(template, emoji.EmojiName)
 				}
 			}
-			return fmt.Sprintf(":%s:", alt)
 		}
-		return ""
+
+		// Layer 4: find in other guild Discord
+		for id, guild := range portal.bridge.guildsByID {
+			if id == portal.GuildID {
+				// Skip searched guild
+				continue
+			}
+			for _, emoji := range guild.discordEmojis {
+				if emoji.Name == alt {
+					portal.log.Debug().Msg("Found emoji in layer 4 (other discord)")
+					var template string
+					if emoji.Animated {
+						template = "<a:%s:%s>"
+					} else {
+						template = "<:%s:%s>"
+					}
+					return fmt.Sprintf(template, emoji.Name, emoji.ID)
+				}
+			}
+		}
+
+		// Default to :emoji:
+		return fmt.Sprintf(":%s:", alt)
 	},
 }
 
