@@ -1020,9 +1020,7 @@ func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSp
 
 func (user *User) handleGuildEmoji(guildID string, emojis []*discordgo.Emoji) {
 	guild := user.bridge.GetGuildByID(guildID, true)
-	if !guild.NoEmoji {
-		guild.UpdateEmojis(emojis)
-	}
+	guild.UpdateEmojis(emojis)
 }
 
 func (user *User) connectedHandler(_ *discordgo.Connect) {

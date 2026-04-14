@@ -177,9 +177,7 @@ func (guild *Guild) CreateMatrixRoom(user *User, meta *discordgo.Guild) error {
 	}
 	guild.log.Infoln("Creating Matrix room for guild")
 	guild.UpdateInfo(user, meta)
-	if !guild.NoEmoji {
-		guild.UpdateEmojis(meta.Emojis)
-	}
+	guild.UpdateEmojis(meta.Emojis)
 
 	bridgeInfoStateKey, bridgeInfo := guild.getBridgeInfo()
 
@@ -327,6 +325,9 @@ type ImagePackEventContent struct {
 func (guild *Guild) UpdateEmojis(emojis []*discordgo.Emoji) {
 	guild.log.Debugfln("Updating emojis for %s", guild.ID)
 	guild.discordEmojis = emojis
+	if guild.NoEmoji {
+		return
+	}
 	newEmojis := map[string]*database.GuildEmoji{}
 	for _, emoji := range emojis {
 		converted := guild.bridge.DB.GuildEmoji.New()
