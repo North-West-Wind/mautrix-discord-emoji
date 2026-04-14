@@ -990,6 +990,7 @@ func (user *User) handleGuildRoles(guildID string, newRoles []*discordgo.Role) {
 func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSpace bool) {
 	guild := user.bridge.GetGuildByID(meta.ID, true)
 	guild.UpdateInfo(user, meta)
+	guild.UpdateEmojis(meta.Emojis)
 	if len(meta.Channels) > 0 {
 		for _, ch := range meta.Channels {
 			if !user.channelIsBridgeable(ch) {
