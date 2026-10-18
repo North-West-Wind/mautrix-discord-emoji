@@ -1,3 +1,22 @@
+# v0.7.7 (2026-08-16)
+
+* Updated Docker image to Alpine 3.24.
+* Added option to disable DMs to non-friends.
+* Fixed panic if editing a message fails.
+* Fixed websocket pings when using bot accounts on Discord.
+
+# v0.7.6 (2026-02-16)
+
+* Bumped minimum Go version to 1.25.
+* Updated Docker image to Alpine 3.23.
+* Added support for following tombstones.
+* Added support for disabling link previews in messages sent to Discord using
+  [MSC4095].
+* Added support for federation thumbnail endpoint when using direct media.
+* Disabled using `restricted` join rules by default.
+
+[MSC4095]: https://github.com/matrix-org/matrix-spec-proposals/pull/4095
+
 # v0.7.5 (2025-07-16)
 
 * Fixed federation key response when using direct media.
