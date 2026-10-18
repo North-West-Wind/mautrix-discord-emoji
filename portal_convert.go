@@ -285,7 +285,19 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 	}
 	log := zerolog.Ctx(ctx)
 	handledIDs := make(map[string]struct{})
-	for _, att := range msg.Attachments {
+	attachments := msg.Attachments
+	stickers := msg.StickerItems
+	embeds := msg.Embeds
+	// Also process forwarded message attachments, stickers and embeds
+	if msg.MessageReference != nil &&
+		msg.MessageReference.Type == discordgo.MessageReferenceTypeForward &&
+		len(msg.MessageSnapshots) > 0 &&
+		msg.MessageSnapshots[0].Message != nil {
+		attachments = append(attachments, msg.MessageSnapshots[0].Message.Attachments...)
+		stickers = append(stickers, msg.MessageSnapshots[0].Message.StickerItems...)
+		embeds = append(embeds, msg.MessageSnapshots[0].Message.Embeds...)
+	}
+	for _, att := range attachments {
 		if _, handled := handledIDs[att.ID]; handled {
 			continue
 		}
@@ -295,7 +307,7 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 			parts = append(parts, part)
 		}
 	}
-	for _, sticker := range msg.StickerItems {
+	for _, sticker := range stickers {
 		if _, handled := handledIDs[sticker.ID]; handled {
 			continue
 		}
@@ -305,7 +317,7 @@ func (portal *Portal) convertDiscordMessage(ctx context.Context, puppet *Puppet,
 			parts = append(parts, part)
 		}
 	}
-	for i, embed := range msg.Embeds {
+	for i, embed := range embeds {
 		// Ignore non-video embeds, they're handled in convertDiscordTextMessage
 		if getEmbedType(msg, embed) != EmbedVideo {
 			continue
