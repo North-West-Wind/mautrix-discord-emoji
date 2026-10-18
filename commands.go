@@ -549,12 +549,12 @@ var cmdGuilds = &commands.FullHandler{
 	Help: commands.HelpMeta{
 		Section:     HelpSectionPortalManagement,
 		Description: "Guild bridging management",
-		Args:        "<status/bridge/unbridge/bridging-mode> [_guild ID_] [...]",
+		Args:        "<status/bridge/unbridge/bridge-emojis/unbridge-emojis/bridging-mode> [_guild ID_] [...]",
 	},
 	RequiresLogin: true,
 }
 
-const smallGuildsHelp = "**Usage**: `$cmdprefix guilds <help/status/bridge/unbridge> [guild ID] [...]`"
+const smallGuildsHelp = "**Usage**: `$cmdprefix guilds <help/status/bridge/unbridge/bridge-emojis/unbridge-emojis> [guild ID] [...]`"
 
 const fullGuildsHelp = smallGuildsHelp + `
 
@@ -562,7 +562,9 @@ const fullGuildsHelp = smallGuildsHelp + `
 * **status** - View the list of guilds and their bridging status.
 * **bridge <_guild ID_> [--entire]** - Enable bridging for a guild. The --entire flag auto-creates portals for all channels.
 * **bridging-mode <_guild ID_> <_mode_>** - Set the mode for bridging messages and new channels in a guild.
-* **unbridge <_guild ID_>** - Unbridge a guild and delete all channel portal rooms.`
+* **unbridge <_guild ID_>** - Unbridge a guild and delete all channel portal rooms.
+* **bridge-emojis <_guild ID_>** - Enable bridging emojis for a guild.
+* **unbridge-emojis <_guild ID_>** - Disable bridging emojis for a guild.`
 
 func fnGuilds(ce *WrappedCommandEvent) {
 	if len(ce.Args) == 0 {
@@ -576,8 +578,12 @@ func fnGuilds(ce *WrappedCommandEvent) {
 		fnListGuilds(ce)
 	case "bridge":
 		fnBridgeGuild(ce)
+	case "bridge-emojis":
+		fnBridgeGuildEmojis(ce)
 	case "unbridge", "delete":
 		fnUnbridgeGuild(ce)
+	case "unbridge-emojis":
+		fnUnbridgeGuildEmojis(ce)
 	case "bridging-mode", "mode":
 		fnGuildBridgingMode(ce)
 	case "help":
@@ -624,6 +630,26 @@ func fnUnbridgeGuild(ce *WrappedCommandEvent) {
 		ce.Reply("Error unbridging guild: %v", err)
 	} else {
 		ce.Reply("Successfully unbridged guild")
+	}
+}
+
+func fnBridgeGuildEmojis(ce *WrappedCommandEvent) {
+	if len(ce.Args) != 1 {
+		ce.Reply("**Usage**: `$cmdprefix guilds bridge-emojis <guild ID>")
+	} else if err := ce.User.bridgeGuildEmojis(ce.Args[0]); err != nil {
+		ce.Reply("Error bridging guild emojis: %v", err)
+	} else {
+		ce.Reply("Successfully bridged guild emojis")
+	}
+}
+
+func fnUnbridgeGuildEmojis(ce *WrappedCommandEvent) {
+	if len(ce.Args) != 1 {
+		ce.Reply("**Usage**: `$cmdprefix guilds unbridge-emojis <guild ID>")
+	} else if err := ce.User.unbridgeGuildEmojis(ce.Args[0]); err != nil {
+		ce.Reply("Error unbridging guild emojis: %v", err)
+	} else {
+		ce.Reply("Successfully unbridged guild emojis")
 	}
 }
 

@@ -37,6 +37,7 @@ import (
 
 	"go.mau.fi/mautrix-discord/config"
 	"go.mau.fi/mautrix-discord/database"
+	"go.mau.fi/mautrix-discord/ext_format"
 )
 
 type portalDiscordMessage struct {
@@ -1507,7 +1508,14 @@ func (portal *Portal) convertReplyMessageToEmbed(eventID id.EventID, url string)
 	} else {
 		targetUser = evt.Sender.String()
 	}
-	body := escapeDiscordMarkdown(cutBody(content.Body))
+	var body string
+	if content.Format == event.FormatHTML {
+		ctx := ext_format.NewContext()
+		ctx.ReturnData[formatterContextPortalKey] = portal
+		body = matrixHTMLParser.Parse(content.FormattedBody, ctx)
+	} else {
+		body = escapeDiscordMarkdown(cutBody(content.Body))
+	}
 	body = fmt.Sprintf("**[Replying to](%s) %s**\n%s", url, targetUser, body)
 	embed := &discordgo.MessageEmbed{Description: body}
 	return embed, nil
@@ -1998,8 +2006,21 @@ func (portal *Portal) handleMatrixReaction(sender *User, evt *event.Event) {
 		} else if emojiFile := portal.bridge.DB.File.GetEmojiByMXC(uri); emojiFile != nil && emojiFile.ID != "" && emojiFile.EmojiName != "" {
 			emojiID = fmt.Sprintf("%s:%s", emojiFile.EmojiName, emojiFile.ID)
 		} else {
-			go portal.sendMessageMetrics(evt, fmt.Errorf("%w %s", errUnknownEmoji, emojiID), "Ignoring")
-			return
+			// this only handles bridge-created im.ponies.room_emotes image packs
+			trimmed := strings.TrimPrefix(emojiID, "mxc://")
+			var emoticon *database.GuildEmoji
+			for _, emoji := range portal.Guild.emojis {
+				if trimmed == emoji.MXC {
+					emoticon = emoji
+					break
+				}
+			}
+			if emoticon != nil {
+				emojiID = emoticon.EmojiName
+			} else {
+				go portal.sendMessageMetrics(evt, fmt.Errorf("%w %s", errUnknownEmoji, emojiID), "Ignoring")
+				return
+			}
 		}
 	} else {
 		emojiID = variationselector.FullyQualify(emojiID)

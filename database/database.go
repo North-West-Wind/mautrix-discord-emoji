@@ -14,15 +14,16 @@ import (
 type Database struct {
 	*dbutil.Database
 
-	User     *UserQuery
-	Portal   *PortalQuery
-	Puppet   *PuppetQuery
-	Message  *MessageQuery
-	Thread   *ThreadQuery
-	Reaction *ReactionQuery
-	Guild    *GuildQuery
-	Role     *RoleQuery
-	File     *FileQuery
+	User       *UserQuery
+	Portal     *PortalQuery
+	Puppet     *PuppetQuery
+	Message    *MessageQuery
+	Thread     *ThreadQuery
+	Reaction   *ReactionQuery
+	Guild      *GuildQuery
+	Role       *RoleQuery
+	File       *FileQuery
+	GuildEmoji *GuildEmojiQuery
 }
 
 func New(baseDB *dbutil.Database, log maulogger.Logger) *Database {
@@ -63,6 +64,10 @@ func New(baseDB *dbutil.Database, log maulogger.Logger) *Database {
 	db.File = &FileQuery{
 		db:  db,
 		log: log.Sub("File"),
+	}
+	db.GuildEmoji = &GuildEmojiQuery{
+		db:  db,
+		log: log.Sub("GuildEmoji"),
 	}
 	return db
 }

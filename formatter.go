@@ -26,6 +26,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/util"
+	"go.mau.fi/mautrix-discord/ext_format"
 	"go.mau.fi/util/variationselector"
 	"golang.org/x/exp/slices"
 	"maunium.net/go/mautrix/event"
@@ -109,7 +110,7 @@ func appendIfNotContains(arr []string, newItem string) []string {
 	return append(arr, newItem)
 }
 
-func (br *DiscordBridge) pillConverter(displayname, mxid, eventID string, ctx format.Context) string {
+func (br *DiscordBridge) pillConverter(displayname, mxid, eventID string, ctx ext_format.Context) string {
 	if len(mxid) == 0 {
 		return displayname
 	}
@@ -198,30 +199,30 @@ func escapeDiscordMarkdown(s string) string {
 	return builder.String()
 }
 
-var matrixHTMLParser = &format.HTMLParser{
+var matrixHTMLParser = &ext_format.ExtendedHTMLParser{
 	TabsToSpaces:   4,
 	Newline:        "\n",
 	HorizontalLine: "\n---\n",
-	ItalicConverter: func(s string, ctx format.Context) string {
+	ItalicConverter: func(s string, ctx ext_format.Context) string {
 		return fmt.Sprintf("*%s*", s)
 	},
-	UnderlineConverter: func(s string, ctx format.Context) string {
+	UnderlineConverter: func(s string, ctx ext_format.Context) string {
 		return fmt.Sprintf("__%s__", s)
 	},
-	TextConverter: func(s string, ctx format.Context) string {
+	TextConverter: func(s string, ctx ext_format.Context) string {
 		if ctx.TagStack.Has("pre") || ctx.TagStack.Has("code") {
 			// If we're in a code block, don't escape markdown
 			return s
 		}
 		return escapeDiscordMarkdown(s)
 	},
-	SpoilerConverter: func(text, reason string, ctx format.Context) string {
+	SpoilerConverter: func(text, reason string, ctx ext_format.Context) string {
 		if reason != "" {
 			return fmt.Sprintf("(%s) ||%s||", reason, text)
 		}
 		return fmt.Sprintf("||%s||", text)
 	},
-	LinkConverter: func(text, href string, ctx format.Context) string {
+	LinkConverter: func(text, href string, ctx ext_format.Context) string {
 		linkPreviews := ctx.ReturnData[formatterContextInputAllowedLinkPreviewsKey].([]string)
 		allowPreview := linkPreviews == nil || slices.Contains(linkPreviews, href)
 		if text == href {
@@ -237,6 +238,93 @@ var matrixHTMLParser = &format.HTMLParser{
 			return fmt.Sprintf("[%s](%s)", escapeDiscordMarkdown(text), href)
 		}
 	},
+	EmoticonConverter: func(src, alt string, ctx ext_format.Context) string {
+		src = strings.TrimPrefix(src, "mxc://")
+		alt = strings.Trim(alt, ":")
+		portal := ctx.ReturnData[formatterContextPortalKey].(*Portal)
+		// 4 layers guild emoji searching:
+		// 1. current guild db
+		// 2. other guilds db
+		// 3. current guild discord
+		// 4. other guilds discord
+
+		// Layer 1: find in current guild DB
+		for name, emoji := range portal.Guild.emojis {
+			split := strings.Split(name, ":")
+			emojiName := strings.Join(split[:len(split)-1], ":")
+			if alt == emojiName || src == emoji.MXC {
+				portal.log.Debug().Msg("Found emoji in layer 1 (guild db)")
+				var template string
+				if emoji.Animated {
+					template = "<a:%s>"
+				} else {
+					template = "<:%s>"
+				}
+				return fmt.Sprintf(template, emoji.EmojiName)
+			}
+		}
+
+		// Layer 2: find in current guild Discord
+		if alt != "" {
+			for _, emoji := range portal.Guild.discordEmojis {
+				if emoji.Name == alt {
+					portal.log.Debug().Msg("Found emoji in layer 2 (guild discord)")
+					var template string
+					if emoji.Animated {
+						template = "<a:%s:%s>"
+					} else {
+						template = "<:%s:%s>"
+					}
+					return fmt.Sprintf(template, emoji.Name, emoji.ID)
+				}
+			}
+		}
+
+		// Layer 3: find in other guild DB
+		for id, guild := range portal.bridge.guildsByID {
+			if id == portal.GuildID {
+				// Skip searched guild
+				continue
+			}
+			for name, emoji := range guild.emojis {
+				split := strings.Split(name, ":")
+				emojiName := strings.Join(split[:len(split)-1], ":")
+				if alt == emojiName || src == emoji.MXC {
+					portal.log.Debug().Msg("Found emoji in layer 3 (other db)")
+					var template string
+					if emoji.Animated {
+						template = "<a:%s>"
+					} else {
+						template = "<:%s>"
+					}
+					return fmt.Sprintf(template, emoji.EmojiName)
+				}
+			}
+		}
+
+		// Layer 4: find in other guild Discord
+		for id, guild := range portal.bridge.guildsByID {
+			if id == portal.GuildID {
+				// Skip searched guild
+				continue
+			}
+			for _, emoji := range guild.discordEmojis {
+				if emoji.Name == alt {
+					portal.log.Debug().Msg("Found emoji in layer 4 (other discord)")
+					var template string
+					if emoji.Animated {
+						template = "<a:%s:%s>"
+					} else {
+						template = "<:%s:%s>"
+					}
+					return fmt.Sprintf(template, emoji.Name, emoji.ID)
+				}
+			}
+		}
+
+		// Default to :emoji:
+		return fmt.Sprintf(":%s:", alt)
+	},
 }
 
 func (portal *Portal) parseMatrixHTML(content *event.MessageEventContent, allowedLinkPreviews []string) (string, *discordgo.MessageAllowedMentions) {
@@ -246,7 +334,7 @@ func (portal *Portal) parseMatrixHTML(content *event.MessageEventContent, allowe
 		RepliedUser: true,
 	}
 	if content.Format == event.FormatHTML && len(content.FormattedBody) > 0 {
-		ctx := format.NewContext()
+		ctx := ext_format.NewContext()
 		ctx.ReturnData[formatterContextInputAllowedLinkPreviewsKey] = allowedLinkPreviews
 		ctx.ReturnData[formatterContextPortalKey] = portal
 		ctx.ReturnData[formatterContextAllowedMentionsKey] = allowedMentions

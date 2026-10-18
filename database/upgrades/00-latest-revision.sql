@@ -10,7 +10,9 @@ CREATE TABLE guild (
     avatar_url TEXT NOT NULL,
     avatar_set BOOLEAN NOT NULL,
 
-    bridging_mode INTEGER NOT NULL
+    bridging_mode INTEGER NOT NULL,
+
+		no_emoji BOOLEAN
 );
 
 CREATE TABLE portal (
@@ -178,3 +180,12 @@ CREATE TABLE discord_file (
 );
 
 CREATE INDEX discord_file_mxc_idx ON discord_file (mxc);
+
+CREATE TABLE guild_emoji (
+    dc_guild_id   TEXT NOT NULL,
+    dc_emoji_name TEXT NOT NULL,
+	mxc           TEXT NOT NULL,
+    animated      BOOLEAN NOT NULL,
+
+    PRIMARY KEY (dc_guild_id, dc_emoji_name)
+);

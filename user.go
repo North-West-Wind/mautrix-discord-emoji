@@ -681,6 +681,8 @@ func (user *User) eventHandler(rawEvt any) {
 		user.guildDeleteHandler(evt)
 	case *discordgo.GuildUpdate:
 		user.guildUpdateHandler(evt)
+	case *discordgo.GuildEmojisUpdate:
+		user.guildEmojiUpdateHandler(evt)
 	case *discordgo.GuildRoleCreate:
 		user.discordRoleToDB(evt.GuildID, evt.Role, nil, nil)
 	case *discordgo.GuildRoleUpdate:
@@ -1031,6 +1033,7 @@ func (user *User) handleGuildRoles(guildID string, newRoles []*discordgo.Role) {
 func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSpace bool) {
 	guild := user.bridge.GetGuildByID(meta.ID, true)
 	guild.UpdateInfo(user, meta)
+	guild.UpdateEmojis(meta.Emojis)
 	if len(meta.Channels) > 0 {
 		for _, ch := range meta.Channels {
 			if !user.channelIsBridgeable(ch) {
@@ -1057,6 +1060,11 @@ func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSp
 		user.handleGuildRoles(meta.ID, meta.Roles)
 	}
 	user.addGuildToSpace(guild, isInSpace, timestamp)
+}
+
+func (user *User) handleGuildEmoji(guildID string, emojis []*discordgo.Emoji) {
+	guild := user.bridge.GetGuildByID(guildID, true)
+	guild.UpdateEmojis(emojis)
 }
 
 func (user *User) connectedHandler(_ *discordgo.Connect) {
@@ -1130,6 +1138,11 @@ func (user *User) guildDeleteHandler(g *discordgo.GuildDelete) {
 func (user *User) guildUpdateHandler(g *discordgo.GuildUpdate) {
 	user.log.Debug().Str("guild_id", g.ID).Msg("Got guild update event")
 	user.handleGuild(g.Guild, time.Now(), user.IsInSpace(g.ID))
+}
+
+func (user *User) guildEmojiUpdateHandler(g *discordgo.GuildEmojisUpdate) {
+	user.log.Debug().Str("guild_id", g.GuildID).Msg("Got guild emoji update event")
+	user.handleGuildEmoji(g.GuildID, g.Emojis)
 }
 
 func (user *User) threadListSyncHandler(t *discordgo.ThreadListSync) {
@@ -1553,8 +1566,27 @@ func (user *User) bridgeGuild(guildID string, everything bool) error {
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to subscribe to guild")
 		}
+		// update emojis
+		emojis, err := user.Session.GuildEmojis(guildID)
+		if err != nil {
+			user.log.Warn().Err(err).Msgf("Failed to update emojis for guild %s while subscribing", guild.ID)
+		} else {
+			user.handleGuildEmoji(guildID, emojis)
+		}
 	}
 
+	return nil
+}
+
+func (user *User) bridgeGuildEmojis(guildID string) error {
+	guild := user.bridge.GetGuildByID(guildID, false)
+	if guild == nil {
+		return errors.New("guild not found")
+	}
+	guild.NoEmoji = false
+	meta, _ := user.Session.State.Guild(guildID)
+	guild.UpdateEmojis(meta.Emojis)
+	guild.Update()
 	return nil
 }
 
@@ -1579,5 +1611,16 @@ func (user *User) unbridgeGuild(guildID string) error {
 	}
 	guild.cleanup()
 	guild.RemoveMXID()
+	return nil
+}
+
+func (user *User) unbridgeGuildEmojis(guildID string) error {
+	guild := user.bridge.GetGuildByID(guildID, false)
+	if guild == nil {
+		return errors.New("guild not found")
+	}
+	guild.NoEmoji = true
+	guild.UpdateEmojis([]*discordgo.Emoji{})
+	guild.Update()
 	return nil
 }
