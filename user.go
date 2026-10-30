@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1032,6 +1033,9 @@ func (user *User) handleGuild(meta *discordgo.Guild, timestamp time.Time, isInSp
 	guild := user.bridge.GetGuildByID(meta.ID, true)
 	guild.UpdateInfo(user, meta)
 	if len(meta.Channels) > 0 {
+		slices.SortFunc(meta.Channels, func(a, b *discordgo.Channel) int {
+			return a.Position - b.Position
+		})
 		for _, ch := range meta.Channels {
 			if !user.channelIsBridgeable(ch) {
 				continue

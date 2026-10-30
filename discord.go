@@ -50,3 +50,17 @@ func (user *User) channelIsBridgeable(channel *discordgo.Channel) bool {
 		Msg("Computed permissions in channel")
 	return perms&discordgo.PermissionViewChannel > 0
 }
+
+func channelPositionToOrder(position int) string {
+	// Use ASCII code (32-126)
+	charSet := 127 - 32
+	order := []byte{}
+	for position > charSet {
+		order = append(order, 126)
+		position -= charSet
+	}
+	if position > 0 {
+		order = append(order, 32+byte(position))
+	}
+	return string(order)
+}

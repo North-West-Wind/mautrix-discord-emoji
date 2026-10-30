@@ -759,7 +759,7 @@ func fnBridge(ce *WrappedCommandEvent) {
 	portal.updateRoomName()
 	portal.updateRoomAvatar()
 	portal.updateRoomTopic()
-	portal.updateSpace(ce.User)
+	portal.updateSpace(ce.User, "")
 	portal.UpdateBridgeInfo()
 	state, err := portal.MainIntent().State(portal.MXID)
 	if err != nil {

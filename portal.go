@@ -77,6 +77,8 @@ type Portal struct {
 
 	currentlyTyping     []id.UserID
 	currentlyTypingLock sync.Mutex
+
+	order string
 }
 
 const recentMessageBufferSize = 32
@@ -534,7 +536,7 @@ func (portal *Portal) CreateMatrixRoom(user *User, channel *discordgo.Channel) e
 	if portal.GuildID == "" {
 		user.addPrivateChannelToSpace(portal)
 	} else {
-		portal.updateSpace(user)
+		portal.updateSpace(user, channelPositionToOrder(channel.Position))
 	}
 	portal.ensureUserInvited(user, true)
 	user.syncChatDoublePuppetDetails(portal, true)
@@ -2431,7 +2433,7 @@ func (portal *Portal) removeFromSpace() {
 	portal.InSpace = ""
 }
 
-func (portal *Portal) addToSpace(mxid id.RoomID) bool {
+func (portal *Portal) addToSpace(mxid id.RoomID, order string) bool {
 	if portal.InSpace == mxid {
 		return false
 	}
@@ -2450,13 +2452,14 @@ func (portal *Portal) addToSpace(mxid id.RoomID) bool {
 	}
 
 	_, err = portal.bridge.Bot.SendStateEvent(mxid, event.StateSpaceChild, portal.MXID.String(), &event.SpaceChildEventContent{
-		Via: []string{portal.bridge.AS.HomeserverDomain},
-		// TODO order
+		Via:   []string{portal.bridge.AS.HomeserverDomain},
+		Order: order,
 	})
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to set m.space.child event in space")
 	} else {
 		portal.InSpace = mxid
+		portal.order = order
 	}
 	return true
 }
@@ -2487,7 +2490,7 @@ func (portal *Portal) ExpectedSpaceID() id.RoomID {
 	return ""
 }
 
-func (portal *Portal) updateSpace(source *User) bool {
+func (portal *Portal) updateSpace(source *User, order string) bool {
 	if portal.MXID == "" {
 		return false
 	}
@@ -2500,9 +2503,9 @@ func (portal *Portal) updateSpace(source *User) bool {
 				return false
 			}
 		}
-		return portal.addToSpace(portal.Parent.MXID)
+		return portal.addToSpace(portal.Parent.MXID, order)
 	} else if portal.Guild != nil {
-		return portal.addToSpace(portal.Guild.MXID)
+		return portal.addToSpace(portal.Guild.MXID, order)
 	}
 	return false
 }
@@ -2591,8 +2594,9 @@ func (portal *Portal) UpdateInfo(source *User, meta *discordgo.Channel) *discord
 	changed = portal.UpdateTopic(meta.Topic) || changed
 	changed = portal.UpdateParent(meta.ParentID) || changed
 	// Private channels are added to the space in User.handlePrivateChannel
-	if portal.GuildID != "" && portal.MXID != "" && portal.ExpectedSpaceID() != portal.InSpace {
-		changed = portal.updateSpace(source) || changed
+	order := channelPositionToOrder(meta.Position)
+	if portal.GuildID != "" && portal.MXID != "" && portal.ExpectedSpaceID() != portal.InSpace || order != portal.order {
+		changed = portal.updateSpace(source, order) || changed
 	}
 	if changed {
 		portal.UpdateBridgeInfo()
