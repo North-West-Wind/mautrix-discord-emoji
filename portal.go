@@ -2434,24 +2434,28 @@ func (portal *Portal) removeFromSpace() {
 }
 
 func (portal *Portal) addToSpace(mxid id.RoomID, order string) bool {
-	if portal.InSpace == mxid {
+	if portal.InSpace == mxid && portal.order == order {
 		return false
 	}
-	portal.removeFromSpace()
+	if portal.InSpace != mxid {
+		portal.removeFromSpace()
+	}
 	if mxid == "" {
 		return true
 	}
 
 	log := portal.log.With().Str("space_mxid", mxid.String()).Logger()
-	_, err := portal.MainIntent().SendStateEvent(portal.MXID, event.StateSpaceParent, mxid.String(), &event.SpaceParentEventContent{
-		Via:       []string{portal.bridge.AS.HomeserverDomain},
-		Canonical: true,
-	})
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to set m.space.parent event in room")
+	if portal.InSpace != mxid {
+		_, err := portal.MainIntent().SendStateEvent(portal.MXID, event.StateSpaceParent, mxid.String(), &event.SpaceParentEventContent{
+			Via:       []string{portal.bridge.AS.HomeserverDomain},
+			Canonical: true,
+		})
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to set m.space.parent event in room")
+		}
 	}
 
-	_, err = portal.bridge.Bot.SendStateEvent(mxid, event.StateSpaceChild, portal.MXID.String(), &event.SpaceChildEventContent{
+	_, err := portal.bridge.Bot.SendStateEvent(mxid, event.StateSpaceChild, portal.MXID.String(), &event.SpaceChildEventContent{
 		Via:   []string{portal.bridge.AS.HomeserverDomain},
 		Order: order,
 	})
@@ -2495,13 +2499,16 @@ func (portal *Portal) updateSpace(source *User, order string) bool {
 		return false
 	}
 	if portal.Parent != nil {
-		if portal.Parent.MXID != "" {
+		if portal.Parent.MXID == "" {
 			portal.log.Warn().Str("parent_id", portal.ParentID).Msg("Parent portal has no Matrix room, creating...")
 			err := portal.Parent.CreateMatrixRoom(source, nil)
 			if err != nil {
 				portal.log.Err(err).Str("parent_id", portal.ParentID).Msg("Failed to create Matrix room for parent")
 				return false
 			}
+		} else if portal.Parent.order == "" {
+			portal.log.Warn().Str("parent_id", portal.ParentID).Msg("Parent portal has no order, updating...")
+			portal.Parent.UpdateInfo(source, nil)
 		}
 		return portal.addToSpace(portal.Parent.MXID, order)
 	} else if portal.Guild != nil {
@@ -2595,7 +2602,7 @@ func (portal *Portal) UpdateInfo(source *User, meta *discordgo.Channel) *discord
 	changed = portal.UpdateParent(meta.ParentID) || changed
 	// Private channels are added to the space in User.handlePrivateChannel
 	order := channelPositionToOrder(meta.Position)
-	if portal.GuildID != "" && portal.MXID != "" && portal.ExpectedSpaceID() != portal.InSpace || order != portal.order {
+	if portal.GuildID != "" && portal.MXID != "" && (portal.ExpectedSpaceID() != portal.InSpace || order != portal.order) {
 		changed = portal.updateSpace(source, order) || changed
 	}
 	if changed {
