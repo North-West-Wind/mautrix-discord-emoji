@@ -1604,6 +1604,7 @@ func (user *User) unbridgeGuild(guildID string) error {
 		return errors.New("that guild is not bridged")
 	}
 	guild.BridgingMode = database.GuildBridgeNothing
+	guild.UpdateEmojis([]*discordgo.Emoji{})
 	guild.Update()
 	for _, portal := range user.bridge.GetAllPortalsInGuild(guild.ID) {
 		portal.cleanup(false)
